@@ -2410,7 +2410,7 @@ export default function FlowerOfLifeClock({
 }
 
 
-const DEFAULT_CLOCK_CONFIG = {
+export const DEFAULT_CLOCK_CONFIG = {
   mode: "wall-clock",
   paletteMode: "dayPhase",
 
@@ -2434,7 +2434,7 @@ const DEFAULT_CLOCK_CONFIG = {
   lerpFactor: 0.18,
 } satisfies Partial<FlowerClockProps>;
 
-const DEMO_CLOCK_CONFIG = {
+export const DEMO_CLOCK_CONFIG = {
   mode: "cycle",
   cycleMs: 30_000,
   paletteMode: "cycle",
