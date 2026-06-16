@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:dist": "npm run build && npm run package:dist",
+    "package:dist": "rm -f flower-clock-dist.zip && cd dist && zip -r ../flower-clock-dist.zip .",
     "lint": "eslint .",
     "preview": "vite preview"
   },
