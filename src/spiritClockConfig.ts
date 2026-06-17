@@ -14,9 +14,12 @@ export type ClockMode =
 
 export type PaletteMode = "cycle" | "fixed" | "weekday" | "day-atmosphere";
 
-export type WeekdayMode = "off" | "subtle" | "distinct";
+export type WeekdayMode = "off" | "subtle" | "distinct" | "fixed";
 
 export type DayAtmosphereMode = "off" | "solar" | "mood";
+
+/** Weekday background channel — maps to FlowerOfLifeClock `dayAtmosphereMode`. */
+export type DayAtmosphereBehavior = "rhythm" | "weather" | "aura" | "full";
 
 export type PerformanceMode = "quality" | "balanced" | "low-power";
 
@@ -35,6 +38,7 @@ export type SpiritClockConfig = {
   paletteMode: PaletteMode;
   weekdayMode: WeekdayMode;
   dayAtmosphereMode: DayAtmosphereMode;
+  dayAtmosphereBehavior: DayAtmosphereBehavior;
   performanceMode: PerformanceMode;
   reducedMotion: ReducedMotionMode;
   glowIntensity: GlowIntensity;
@@ -56,6 +60,7 @@ export type SpiritClockConfig = {
   auraOpacity: number;
   glowOpacity: number;
   fixedPaletteIndex: number;
+  fixedWeekdayIndex: number;
   showDebugMetadata: boolean;
 };
 
@@ -72,6 +77,7 @@ export const DEFAULT_SPIRIT_CLOCK_CONFIG: SpiritClockConfig = {
   paletteMode: "day-atmosphere",
   weekdayMode: "subtle",
   dayAtmosphereMode: "solar",
+  dayAtmosphereBehavior: "weather",
   performanceMode: "balanced",
   reducedMotion: "system",
   glowIntensity: "normal",
@@ -93,6 +99,7 @@ export const DEFAULT_SPIRIT_CLOCK_CONFIG: SpiritClockConfig = {
   auraOpacity: 1,
   glowOpacity: 1,
   fixedPaletteIndex: 0,
+  fixedWeekdayIndex: 0,
   showDebugMetadata: false,
 };
 
@@ -132,59 +139,46 @@ function mapPaletteMode(mode: PaletteMode): FlowerClockProps["paletteMode"] {
   }
 }
 
-function mapWeekdayAtmosphere(config: SpiritClockConfig): Pick<
-  FlowerClockProps,
-  "showDayAtmosphere" | "dayAtmosphereMode" | "dayAtmosphereStrength" | "weekdayMode"
-> {
-  if (config.weekdayMode === "off") {
-    return {
-      showDayAtmosphere: false,
-      dayAtmosphereMode: "rhythm",
-      dayAtmosphereStrength: 0,
-      weekdayMode: "real",
-    };
+function weekdayAtmosphereStrength(config: SpiritClockConfig): number {
+  switch (config.weekdayMode) {
+    case "off":
+      return 0;
+    case "distinct":
+      return 0.85;
+    case "subtle":
+    case "fixed":
+    default:
+      return 0.75;
   }
+}
 
-  if (config.weekdayMode === "distinct") {
-    return {
-      showDayAtmosphere: true,
-      dayAtmosphereMode: "full",
-      dayAtmosphereStrength: 0.85,
-      weekdayMode: "real",
-    };
-  }
-
-  return {
-    showDayAtmosphere: true,
-    dayAtmosphereMode: "weather",
-    dayAtmosphereStrength: 0.75,
-    weekdayMode: "real",
-  };
+function mapWeekdaySource(config: SpiritClockConfig): FlowerClockProps["weekdayMode"] {
+  if (config.weekdayMode === "fixed") return "fixed";
+  return "real";
 }
 
 function mapDayAtmosphere(config: SpiritClockConfig): Pick<
   FlowerClockProps,
-  "showDayAtmosphere" | "dayAtmosphereMode" | "dayAtmosphereStrength"
+  "showDayAtmosphere" | "dayAtmosphereMode" | "dayAtmosphereStrength" | "weekdayMode"
 > {
-  const weekday = mapWeekdayAtmosphere(config);
-
-  if (config.dayAtmosphereMode === "off") {
+  if (config.dayAtmosphereMode === "off" || config.weekdayMode === "off") {
     return {
       showDayAtmosphere: false,
       dayAtmosphereMode: "rhythm",
       dayAtmosphereStrength: 0,
+      weekdayMode: "real",
     };
   }
 
-  if (config.dayAtmosphereMode === "mood") {
-    return {
-      showDayAtmosphere: true,
-      dayAtmosphereMode: "aura",
-      dayAtmosphereStrength: 0.55,
-    };
-  }
+  const strength =
+    config.dayAtmosphereMode === "mood" ? 0.55 : weekdayAtmosphereStrength(config);
 
-  return weekday;
+  return {
+    showDayAtmosphere: true,
+    dayAtmosphereMode: config.dayAtmosphereBehavior,
+    dayAtmosphereStrength: strength,
+    weekdayMode: mapWeekdaySource(config),
+  };
 }
 
 function mapGlowIntensity(intensity: GlowIntensity): Pick<
@@ -261,6 +255,7 @@ export function configToFlowerProps(config: SpiritClockConfig): FlowerClockProps
     ...glow,
     paletteMode: mapPaletteMode(config.paletteMode),
     fixedPaletteIndex: config.fixedPaletteIndex,
+    fixedWeekdayIndex: config.fixedWeekdayIndex,
     performanceMode,
     tickMs,
     r: config.radius,

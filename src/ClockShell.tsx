@@ -51,6 +51,14 @@ export default function ClockShell({
     [onDebugInfo]
   );
 
+  const flowerCallbacks = useMemo(
+    () =>
+      onDebugInfo
+        ? { onReadoutChange: handleReadoutChange, onStepChange: handleStepChange }
+        : { onReadoutChange: handleReadoutChange },
+    [onDebugInfo, handleReadoutChange, handleStepChange]
+  );
+
   const shellClassName = [
     "flower-clock-shell",
     sizeClass,
@@ -76,8 +84,7 @@ export default function ClockShell({
 
       <FlowerOfLifeClock
         {...flowerProps}
-        onReadoutChange={handleReadoutChange}
-        onStepChange={handleStepChange}
+        {...flowerCallbacks}
       />
 
       <div className="clock-readout">

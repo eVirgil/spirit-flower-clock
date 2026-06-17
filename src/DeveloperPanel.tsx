@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useId,
@@ -12,6 +13,7 @@ import {
   type ClockMode,
   type ClockSize,
   type DayAtmosphereMode,
+  type DayAtmosphereBehavior,
   type ForcePhase,
   type GlowIntensity,
   type PaletteMode,
@@ -29,7 +31,8 @@ type DeveloperPanelProps = {
   config: SpiritClockConfig;
   debugInfo: SpiritClockDebugInfo | null;
   onClose: () => void;
-  onChange: (next: SpiritClockConfig) => void;
+  onPatch: (partial: Partial<SpiritClockConfig>) => void;
+  onReplace: (next: SpiritClockConfig) => void;
 };
 
 type Option<T extends string> = { value: T; label: string; disabled?: boolean };
@@ -114,7 +117,7 @@ function SelectControl<T extends string>({
   );
 }
 
-function NumberControl({
+const NumberControl = memo(function NumberControl({
   label,
   value,
   min,
@@ -151,9 +154,9 @@ function NumberControl({
       />
     </div>
   );
-}
+});
 
-function SliderControl({
+const SliderControl = memo(function SliderControl({
   label,
   value,
   min,
@@ -188,9 +191,9 @@ function SliderControl({
       />
     </div>
   );
-}
+});
 
-function Section({
+const Section = memo(function Section({
   title,
   children,
   collapsible = false,
@@ -234,7 +237,7 @@ function Section({
       ) : null}
     </section>
   );
-}
+});
 
 const CLOCK_MODE_OPTIONS: Option<ClockMode>[] = [
   { value: "living-clock", label: "Living Clock" },
@@ -254,12 +257,30 @@ const WEEKDAY_MODE_OPTIONS: Option<WeekdayMode>[] = [
   { value: "off", label: "Off" },
   { value: "subtle", label: "Subtle Weekday Shift" },
   { value: "distinct", label: "Distinct Daily Theme" },
+  { value: "fixed", label: "Fixed Weekday" },
+];
+
+const FIXED_WEEKDAY_OPTIONS: Option<string>[] = [
+  { value: "0", label: "Sunday (0)" },
+  { value: "1", label: "Monday (1)" },
+  { value: "2", label: "Tuesday (2)" },
+  { value: "3", label: "Wednesday (3)" },
+  { value: "4", label: "Thursday (4)" },
+  { value: "5", label: "Friday (5)" },
+  { value: "6", label: "Saturday (6)" },
 ];
 
 const DAY_ATMOSPHERE_OPTIONS: Option<DayAtmosphereMode>[] = [
   { value: "off", label: "Off" },
   { value: "solar", label: "Solar Day Cycle" },
   { value: "mood", label: "Ambient Mood" },
+];
+
+const DAY_ATMOSPHERE_BEHAVIOR_OPTIONS: Option<DayAtmosphereBehavior>[] = [
+  { value: "rhythm", label: "Rhythm" },
+  { value: "weather", label: "Weather" },
+  { value: "aura", label: "Aura" },
+  { value: "full", label: "Full" },
 ];
 
 const PERFORMANCE_OPTIONS: Option<PerformanceMode>[] = [
@@ -307,355 +328,472 @@ const FORCE_PHASE_OPTIONS: Option<ForcePhase>[] = [
   { value: "glow", label: "Glow" },
 ];
 
+const CYCLE_DURATION_OPTIONS: Option<string>[] = [
+  { value: "30000", label: "30s" },
+  { value: "60000", label: "60s" },
+  { value: "120000", label: "120s" },
+  { value: "custom", label: "Custom" },
+];
+
 const CYCLE_PRESETS = [30_000, 60_000, 120_000] as const;
 
-export default function DeveloperPanel({
+function isFormFieldTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+const CommonControls = memo(function CommonControls({
+  config,
+  onPatch,
+}: {
+  config: SpiritClockConfig;
+  onPatch: (partial: Partial<SpiritClockConfig>) => void;
+}) {
+  return (
+    <Section title="Common">
+      <SelectControl
+        label="Clock Mode"
+        value={config.clockMode}
+        options={CLOCK_MODE_OPTIONS}
+        onChange={(clockMode: ClockMode) => onPatch({ clockMode })}
+      />
+
+      <SelectControl
+        label="Palette Mode"
+        value={config.paletteMode}
+        options={PALETTE_MODE_OPTIONS}
+        onChange={(paletteMode: PaletteMode) => onPatch({ paletteMode })}
+      />
+
+      {config.paletteMode === "fixed" ? (
+        <NumberControl
+          label="Fixed Palette Index"
+          value={config.fixedPaletteIndex}
+          min={0}
+          max={23}
+          onChange={(fixedPaletteIndex) => onPatch({ fixedPaletteIndex })}
+        />
+      ) : null}
+
+      <SelectControl
+        label="Weekday Mode"
+        value={config.weekdayMode}
+        options={WEEKDAY_MODE_OPTIONS}
+        onChange={(weekdayMode: WeekdayMode) => onPatch({ weekdayMode })}
+        hint="Affects atmosphere when weekday palette or subtle shifts are active."
+      />
+
+      {config.weekdayMode === "fixed" ? (
+        <SelectControl
+          label="Fixed Weekday Index"
+          value={String(config.fixedWeekdayIndex)}
+          options={FIXED_WEEKDAY_OPTIONS}
+          onChange={(value) => onPatch({ fixedWeekdayIndex: Number(value) })}
+          hint="Locks atmosphere and weekday palette to this day (0 = Sunday)."
+        />
+      ) : null}
+
+      <SelectControl
+        label="Day Atmosphere Mode"
+        value={config.dayAtmosphereMode}
+        options={DAY_ATMOSPHERE_OPTIONS}
+        onChange={(dayAtmosphereMode: DayAtmosphereMode) => onPatch({ dayAtmosphereMode })}
+        hint="Solar enables weekday atmosphere; Ambient Mood softens blend strength."
+      />
+
+      <SelectControl
+        label="Day Atmosphere Behavior"
+        value={config.dayAtmosphereBehavior}
+        options={DAY_ATMOSPHERE_BEHAVIOR_OPTIONS}
+        onChange={(dayAtmosphereBehavior: DayAtmosphereBehavior) =>
+          onPatch({ dayAtmosphereBehavior })
+        }
+        hint="Rhythm: star timing + aura. Weather: adds star drift. Aura: tint only. Full: all effects."
+      />
+
+      <SegmentedControl
+        label="Performance Mode"
+        value={config.performanceMode}
+        options={PERFORMANCE_OPTIONS}
+        onChange={(performanceMode: PerformanceMode) => onPatch({ performanceMode })}
+      />
+
+      <SelectControl
+        label="Reduced Motion"
+        value={config.reducedMotion}
+        options={REDUCED_MOTION_OPTIONS}
+        onChange={(reducedMotion: ReducedMotionMode) => onPatch({ reducedMotion })}
+      />
+
+      <SegmentedControl
+        label="Glow Intensity"
+        value={config.glowIntensity}
+        options={GLOW_OPTIONS}
+        onChange={(glowIntensity: GlowIntensity) => onPatch({ glowIntensity })}
+      />
+
+      <SegmentedControl
+        label="Clock Size"
+        value={config.clockSize}
+        options={SIZE_OPTIONS}
+        onChange={(clockSize: ClockSize) => onPatch({ clockSize })}
+      />
+
+      <SelectControl
+        label="Rotation"
+        value={config.rotation}
+        options={ROTATION_OPTIONS}
+        onChange={(rotation: RotationPreset) => onPatch({ rotation })}
+      />
+
+      <SegmentedControl
+        label="Sponsor"
+        value={config.sponsorVisibility}
+        options={SPONSOR_OPTIONS}
+        onChange={(sponsorVisibility: SponsorVisibility) => onPatch({ sponsorVisibility })}
+      />
+    </Section>
+  );
+});
+
+const AdvancedControls = memo(function AdvancedControls({
+  config,
+  debugInfo,
+  cyclePreset,
+  importText,
+  importStatus,
+  onPatch,
+  onReplace,
+  onCyclePresetChange,
+  onImportTextChange,
+  onCopyConfig,
+  onImportConfig,
+}: {
+  config: SpiritClockConfig;
+  debugInfo: SpiritClockDebugInfo | null;
+  cyclePreset: string;
+  importText: string;
+  importStatus: string | null;
+  onPatch: (partial: Partial<SpiritClockConfig>) => void;
+  onReplace: (next: SpiritClockConfig) => void;
+  onCyclePresetChange: (value: string) => void;
+  onImportTextChange: (value: string) => void;
+  onCopyConfig: () => void;
+  onImportConfig: () => void;
+}) {
+  return (
+    <Section title="Advanced" collapsible defaultCollapsed>
+      <div className="dev-subsection">
+        <h4 className="dev-subsection-title">Timing</h4>
+        <SelectControl
+          label="Cycle Duration"
+          value={cyclePreset}
+          options={CYCLE_DURATION_OPTIONS}
+          onChange={onCyclePresetChange}
+        />
+        {cyclePreset === "custom" ? (
+          <NumberControl
+            label="Custom Cycle (ms)"
+            value={config.cycleDurationMs}
+            min={1000}
+            step={1000}
+            onChange={(cycleDurationMs) => onPatch({ cycleDurationMs })}
+          />
+        ) : null}
+        <NumberControl
+          label="Tick Rate (ms)"
+          value={config.tickMs}
+          min={16}
+          step={1}
+          onChange={(tickMs) => onPatch({ tickMs })}
+          hint="Lower values may use more CPU."
+        />
+      </div>
+
+      <div className="dev-subsection">
+        <h4 className="dev-subsection-title">Geometry</h4>
+        <SliderControl
+          label="Radius"
+          value={config.radius}
+          min={40}
+          max={90}
+          step={1}
+          onChange={(radius) => onPatch({ radius })}
+        />
+        <SliderControl
+          label="Clip Multiplier"
+          value={config.clipMultiplier}
+          min={2}
+          max={4}
+          step={0.1}
+          onChange={(clipMultiplier) => onPatch({ clipMultiplier })}
+        />
+        <SliderControl
+          label="Boundary Offset"
+          value={config.boundaryOffset}
+          min={0}
+          max={30}
+          step={1}
+          onChange={(boundaryOffset) => onPatch({ boundaryOffset })}
+        />
+        {config.rotation === "custom" ? (
+          <SliderControl
+            label="Rotation Degrees"
+            value={config.customRotationDeg}
+            min={-90}
+            max={90}
+            step={1}
+            onChange={(customRotationDeg) => onPatch({ customRotationDeg })}
+          />
+        ) : null}
+      </div>
+
+      <div className="dev-subsection">
+        <h4 className="dev-subsection-title">Rendering</h4>
+        <SliderControl
+          label="Glow Blur Strength"
+          value={config.glowBlurStrength}
+          min={0}
+          max={20}
+          step={0.5}
+          onChange={(glowBlurStrength) => onPatch({ glowBlurStrength })}
+        />
+        <SliderControl
+          label="Interior Stroke Width"
+          value={config.interiorStrokeWidth}
+          min={0.5}
+          max={6}
+          step={0.1}
+          onChange={(interiorStrokeWidth) => onPatch({ interiorStrokeWidth })}
+        />
+        <SliderControl
+          label="Boundary Stroke Width"
+          value={config.boundaryStrokeWidth}
+          min={0.5}
+          max={10}
+          step={0.1}
+          onChange={(boundaryStrokeWidth) => onPatch({ boundaryStrokeWidth })}
+        />
+        <SliderControl
+          label="Aura Opacity"
+          value={config.auraOpacity}
+          min={0}
+          max={2}
+          step={0.05}
+          onChange={(auraOpacity) => onPatch({ auraOpacity })}
+        />
+        <SliderControl
+          label="Glow Opacity"
+          value={config.glowOpacity}
+          min={0}
+          max={2}
+          step={0.05}
+          onChange={(glowOpacity) => onPatch({ glowOpacity })}
+        />
+      </div>
+
+      <div className="dev-subsection">
+        <h4 className="dev-subsection-title">Debug / Preview</h4>
+        <SelectControl
+          label="Force Phase"
+          value={config.forcePhase}
+          options={FORCE_PHASE_OPTIONS}
+          onChange={(forcePhase: ForcePhase) => onPatch({ forcePhase })}
+        />
+        <label className="dev-checkbox">
+          <input
+            type="checkbox"
+            checked={config.showDebugMetadata}
+            onChange={(event) =>
+              onPatch({ showDebugMetadata: event.target.checked })
+            }
+          />
+          Show debug metadata
+        </label>
+        {config.showDebugMetadata && debugInfo ? (
+          <pre className="dev-debug">{JSON.stringify(debugInfo, null, 2)}</pre>
+        ) : null}
+      </div>
+
+      <div className="dev-subsection dev-subsection--reserved">
+        <h4 className="dev-subsection-title">Custom Palettes</h4>
+        <p className="dev-note">Coming later</p>
+      </div>
+
+      <div className="dev-subsection dev-subsection--reserved">
+        <h4 className="dev-subsection-title">Atmosphere Config</h4>
+        <p className="dev-note">Coming later</p>
+      </div>
+
+      <div className="dev-subsection">
+        <h4 className="dev-subsection-title">Utilities</h4>
+        <div className="dev-actions">
+          <button
+            type="button"
+            className="dev-button"
+            onClick={() => onReplace({ ...DEFAULT_SPIRIT_CLOCK_CONFIG })}
+          >
+            Reset defaults
+          </button>
+          <button type="button" className="dev-button" onClick={onCopyConfig}>
+            Copy config JSON
+          </button>
+        </div>
+        <label className="dev-label" htmlFor="dev-import-json">
+          Paste config JSON
+        </label>
+        <textarea
+          id="dev-import-json"
+          className="dev-textarea"
+          rows={4}
+          value={importText}
+          onChange={(event) => onImportTextChange(event.target.value)}
+          placeholder='{"clockMode":"living-clock",...}'
+        />
+        <button type="button" className="dev-button" onClick={onImportConfig}>
+          Import config
+        </button>
+        {importStatus ? <p className="dev-status">{importStatus}</p> : null}
+      </div>
+    </Section>
+  );
+});
+
+function DeveloperPanel({
   open,
   config,
   debugInfo,
   onClose,
-  onChange,
+  onPatch,
+  onReplace,
 }: DeveloperPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const minimizeButtonRef = useRef<HTMLButtonElement>(null);
+  const didInitialFocusRef = useRef(false);
+  const [minimized, setMinimized] = useState(false);
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [cyclePreset, setCyclePreset] = useState<"custom" | string>(() =>
+  const [cyclePreset, setCyclePreset] = useState<string>(() =>
     CYCLE_PRESETS.includes(config.cycleDurationMs as (typeof CYCLE_PRESETS)[number])
       ? String(config.cycleDurationMs)
       : "custom"
   );
 
-  const patch = useCallback(
-    (partial: Partial<SpiritClockConfig>) => {
-      onChange({ ...config, ...partial });
-    },
-    [config, onChange]
-  );
+  useEffect(() => {
+    if (!open) {
+      didInitialFocusRef.current = false;
+      return;
+    }
+
+    if (!didInitialFocusRef.current) {
+      didInitialFocusRef.current = true;
+      minimizeButtonRef.current?.focus();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
 
-    closeButtonRef.current?.focus();
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
+      if (event.key !== "Escape") return;
+      if (isFormFieldTarget(event.target)) return;
+
+      event.preventDefault();
+      if (minimized) {
+        setMinimized(false);
+        return;
       }
+      onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, minimized, onClose]);
 
-  const handleCopyConfig = async () => {
+  const handleCyclePresetChange = useCallback(
+    (value: string) => {
+      setCyclePreset(value);
+      if (value !== "custom") {
+        onPatch({ cycleDurationMs: Number(value) });
+      }
+    },
+    [onPatch]
+  );
+
+  const handleCopyConfig = useCallback(async () => {
     await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
     setImportStatus("Config copied to clipboard.");
-  };
+  }, [config]);
 
-  const handleImportConfig = () => {
+  const handleImportConfig = useCallback(() => {
     const parsed = parseSpiritClockConfig(importText);
     if (!parsed) {
       setImportStatus("Invalid JSON — config not applied.");
       return;
     }
-    onChange(parsed);
+    onReplace(parsed);
     setImportStatus("Config imported.");
-  };
+  }, [importText, onReplace]);
 
   if (!open) return null;
+
+  const panelClassName = minimized
+    ? "dev-panel dev-panel--minimized"
+    : "dev-panel";
 
   return (
     <aside
       ref={panelRef}
-      className="dev-panel"
+      className={panelClassName}
       role="dialog"
-      aria-modal="true"
+      aria-modal={!minimized}
       aria-label="Developer Mode"
     >
       <header className="dev-panel-header">
         <h2 className="dev-panel-title">Developer Mode</h2>
-        <button
-          ref={closeButtonRef}
-          type="button"
-          className="dev-close"
-          aria-label="Close developer panel"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <div className="dev-panel-actions">
+          <button
+            ref={minimizeButtonRef}
+            type="button"
+            className="dev-icon-button"
+            aria-label={minimized ? "Expand developer panel" : "Minimize developer panel"}
+            aria-expanded={!minimized}
+            onClick={() => setMinimized((current) => !current)}
+          >
+            {minimized ? "▢" : "−"}
+          </button>
+          <button
+            type="button"
+            className="dev-icon-button dev-close"
+            aria-label="Close developer panel"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
-      <div className="dev-panel-scroll">
-        <Section title="Common">
-          <SelectControl
-            label="Clock Mode"
-            value={config.clockMode}
-            options={CLOCK_MODE_OPTIONS}
-            onChange={(clockMode) => patch({ clockMode })}
+      {!minimized ? (
+        <div className="dev-panel-scroll">
+          <CommonControls config={config} onPatch={onPatch} />
+          <AdvancedControls
+            config={config}
+            debugInfo={debugInfo}
+            cyclePreset={cyclePreset}
+            importText={importText}
+            importStatus={importStatus}
+            onPatch={onPatch}
+            onReplace={onReplace}
+            onCyclePresetChange={handleCyclePresetChange}
+            onImportTextChange={setImportText}
+            onCopyConfig={handleCopyConfig}
+            onImportConfig={handleImportConfig}
           />
-
-          <SelectControl
-            label="Palette Mode"
-            value={config.paletteMode}
-            options={PALETTE_MODE_OPTIONS}
-            onChange={(paletteMode) => patch({ paletteMode })}
-          />
-
-          {config.paletteMode === "fixed" ? (
-            <NumberControl
-              label="Fixed Palette Index"
-              value={config.fixedPaletteIndex}
-              min={0}
-              max={23}
-              onChange={(fixedPaletteIndex) => patch({ fixedPaletteIndex })}
-            />
-          ) : null}
-
-          <SelectControl
-            label="Weekday Mode"
-            value={config.weekdayMode}
-            options={WEEKDAY_MODE_OPTIONS}
-            onChange={(weekdayMode) => patch({ weekdayMode })}
-            hint="Affects atmosphere when weekday palette or subtle shifts are active."
-          />
-
-          <SelectControl
-            label="Day Atmosphere Mode"
-            value={config.dayAtmosphereMode}
-            options={DAY_ATMOSPHERE_OPTIONS}
-            onChange={(dayAtmosphereMode) => patch({ dayAtmosphereMode })}
-          />
-
-          <SegmentedControl
-            label="Performance Mode"
-            value={config.performanceMode}
-            options={PERFORMANCE_OPTIONS}
-            onChange={(performanceMode) => patch({ performanceMode })}
-          />
-
-          <SelectControl
-            label="Reduced Motion"
-            value={config.reducedMotion}
-            options={REDUCED_MOTION_OPTIONS}
-            onChange={(reducedMotion) => patch({ reducedMotion })}
-          />
-
-          <SegmentedControl
-            label="Glow Intensity"
-            value={config.glowIntensity}
-            options={GLOW_OPTIONS}
-            onChange={(glowIntensity) => patch({ glowIntensity })}
-          />
-
-          <SegmentedControl
-            label="Clock Size"
-            value={config.clockSize}
-            options={SIZE_OPTIONS}
-            onChange={(clockSize) => patch({ clockSize })}
-          />
-
-          <SelectControl
-            label="Rotation"
-            value={config.rotation}
-            options={ROTATION_OPTIONS}
-            onChange={(rotation) => patch({ rotation })}
-          />
-
-          <SegmentedControl
-            label="Sponsor"
-            value={config.sponsorVisibility}
-            options={SPONSOR_OPTIONS}
-            onChange={(sponsorVisibility) => patch({ sponsorVisibility })}
-          />
-        </Section>
-
-        <Section title="Advanced" collapsible defaultCollapsed>
-          <div className="dev-subsection">
-            <h4 className="dev-subsection-title">Timing</h4>
-            <SelectControl
-              label="Cycle Duration"
-              value={cyclePreset}
-              options={[
-                { value: "30000", label: "30s" },
-                { value: "60000", label: "60s" },
-                { value: "120000", label: "120s" },
-                { value: "custom", label: "Custom" },
-              ]}
-              onChange={(value) => {
-                setCyclePreset(value);
-                if (value !== "custom") {
-                  patch({ cycleDurationMs: Number(value) });
-                }
-              }}
-            />
-            {cyclePreset === "custom" ? (
-              <NumberControl
-                label="Custom Cycle (ms)"
-                value={config.cycleDurationMs}
-                min={1000}
-                step={1000}
-                onChange={(cycleDurationMs) => patch({ cycleDurationMs })}
-              />
-            ) : null}
-            <NumberControl
-              label="Tick Rate (ms)"
-              value={config.tickMs}
-              min={16}
-              step={1}
-              onChange={(tickMs) => patch({ tickMs })}
-              hint="Lower values may use more CPU."
-            />
-          </div>
-
-          <div className="dev-subsection">
-            <h4 className="dev-subsection-title">Geometry</h4>
-            <SliderControl
-              label="Radius"
-              value={config.radius}
-              min={40}
-              max={90}
-              step={1}
-              onChange={(radius) => patch({ radius })}
-            />
-            <SliderControl
-              label="Clip Multiplier"
-              value={config.clipMultiplier}
-              min={2}
-              max={4}
-              step={0.1}
-              onChange={(clipMultiplier) => patch({ clipMultiplier })}
-            />
-            <SliderControl
-              label="Boundary Offset"
-              value={config.boundaryOffset}
-              min={0}
-              max={30}
-              step={1}
-              onChange={(boundaryOffset) => patch({ boundaryOffset })}
-            />
-            {config.rotation === "custom" ? (
-              <SliderControl
-                label="Rotation Degrees"
-                value={config.customRotationDeg}
-                min={-90}
-                max={90}
-                step={1}
-                onChange={(customRotationDeg) => patch({ customRotationDeg })}
-              />
-            ) : null}
-          </div>
-
-          <div className="dev-subsection">
-            <h4 className="dev-subsection-title">Rendering</h4>
-            <SliderControl
-              label="Glow Blur Strength"
-              value={config.glowBlurStrength}
-              min={0}
-              max={20}
-              step={0.5}
-              onChange={(glowBlurStrength) => patch({ glowBlurStrength })}
-            />
-            <SliderControl
-              label="Interior Stroke Width"
-              value={config.interiorStrokeWidth}
-              min={0.5}
-              max={6}
-              step={0.1}
-              onChange={(interiorStrokeWidth) => patch({ interiorStrokeWidth })}
-            />
-            <SliderControl
-              label="Boundary Stroke Width"
-              value={config.boundaryStrokeWidth}
-              min={0.5}
-              max={10}
-              step={0.1}
-              onChange={(boundaryStrokeWidth) => patch({ boundaryStrokeWidth })}
-            />
-            <SliderControl
-              label="Aura Opacity"
-              value={config.auraOpacity}
-              min={0}
-              max={2}
-              step={0.05}
-              onChange={(auraOpacity) => patch({ auraOpacity })}
-            />
-            <SliderControl
-              label="Glow Opacity"
-              value={config.glowOpacity}
-              min={0}
-              max={2}
-              step={0.05}
-              onChange={(glowOpacity) => patch({ glowOpacity })}
-            />
-          </div>
-
-          <div className="dev-subsection">
-            <h4 className="dev-subsection-title">Debug / Preview</h4>
-            <SelectControl
-              label="Force Phase"
-              value={config.forcePhase}
-              options={FORCE_PHASE_OPTIONS}
-              onChange={(forcePhase) => patch({ forcePhase })}
-            />
-            <label className="dev-checkbox">
-              <input
-                type="checkbox"
-                checked={config.showDebugMetadata}
-                onChange={(event) =>
-                  patch({ showDebugMetadata: event.target.checked })
-                }
-              />
-              Show debug metadata
-            </label>
-            {config.showDebugMetadata && debugInfo ? (
-              <pre className="dev-debug">{JSON.stringify(debugInfo, null, 2)}</pre>
-            ) : null}
-          </div>
-
-          <div className="dev-subsection dev-subsection--reserved">
-            <h4 className="dev-subsection-title">Custom Palettes</h4>
-            <p className="dev-note">Coming later</p>
-          </div>
-
-          <div className="dev-subsection dev-subsection--reserved">
-            <h4 className="dev-subsection-title">Atmosphere Config</h4>
-            <p className="dev-note">Coming later</p>
-          </div>
-
-          <div className="dev-subsection">
-            <h4 className="dev-subsection-title">Utilities</h4>
-            <div className="dev-actions">
-              <button
-                type="button"
-                className="dev-button"
-                onClick={() => onChange({ ...DEFAULT_SPIRIT_CLOCK_CONFIG })}
-              >
-                Reset defaults
-              </button>
-              <button type="button" className="dev-button" onClick={handleCopyConfig}>
-                Copy config JSON
-              </button>
-            </div>
-            <label className="dev-label" htmlFor="dev-import-json">
-              Paste config JSON
-            </label>
-            <textarea
-              id="dev-import-json"
-              className="dev-textarea"
-              rows={4}
-              value={importText}
-              onChange={(event) => setImportText(event.target.value)}
-              placeholder='{"clockMode":"living-clock",...}'
-            />
-            <button type="button" className="dev-button" onClick={handleImportConfig}>
-              Import config
-            </button>
-            {importStatus ? <p className="dev-status">{importStatus}</p> : null}
-          </div>
-        </Section>
-      </div>
+        </div>
+      ) : null}
     </aside>
   );
 }
+
+export default memo(DeveloperPanel);

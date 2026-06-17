@@ -470,6 +470,22 @@
   gap: 0.75rem;
   padding: 0.65rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.dev-panel--minimized {
+  max-height: none;
+}
+
+.dev-panel--minimized .dev-panel-header {
+  border-bottom: 0;
+}
+
+.dev-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 .dev-panel-title {
@@ -478,8 +494,13 @@
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.dev-icon-button,
 .dev-close {
   flex: 0 0 auto;
   width: 1.75rem;
@@ -488,11 +509,18 @@
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.8);
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
+  padding: 0;
 }
 
+.dev-close {
+  font-size: 1.1rem;
+}
+
+.dev-icon-button:hover,
+.dev-icon-button:focus-visible,
 .dev-close:hover,
 .dev-close:focus-visible {
   background: rgba(255, 255, 255, 0.1);
@@ -503,6 +531,8 @@
 .dev-panel-scroll {
   overflow: auto;
   padding: 0.65rem 0.75rem 0.85rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .dev-section + .dev-section {

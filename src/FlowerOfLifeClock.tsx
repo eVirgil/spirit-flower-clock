@@ -76,8 +76,9 @@ export type ReducedMotionOverride = "system" | "on" | "off";
  *
  * - `real`: use the actual current weekday.
  * - `cycle`: cycle weekday atmosphere by redraw index for testing/demo mode.
+ * - `fixed`: use `fixedWeekdayIndex` for preview/testing.
  */
-type WeekdayMode = "real" | "cycle";
+type WeekdayMode = "real" | "cycle" | "fixed";
 /**
  * Weekday background behavior mode.
  *
@@ -368,8 +369,15 @@ export type FlowerClockProps = {
    *
    * - `real`: actual local weekday from `Date`.
    * - `cycle`: weekday index follows `cycleIndex`, useful for testing each style.
+   * - `fixed`: weekday from `fixedWeekdayIndex`.
    */
   weekdayMode?: WeekdayMode;
+  /**
+   * Weekday index used when `weekdayMode="fixed"`.
+   *
+   * `0` = Sunday through `6` = Saturday.
+   */
+  fixedWeekdayIndex?: number;
   /**
    * Whether to include the weekday name in the secondary status line.
    *
@@ -870,9 +878,18 @@ function getWeekdayAtmosphereByIndex(index: number) {
   return WEEKDAY_ATMOSPHERES[((index % 7) + 7) % 7] ?? WEEKDAY_ATMOSPHERES[0];
 }
 
-function getWeekdayAtmosphere(date: Date, weekdayMode: WeekdayMode, cycleIndex: number) {
+function getWeekdayAtmosphere(
+  date: Date,
+  weekdayMode: WeekdayMode,
+  cycleIndex: number,
+  fixedWeekdayIndex = 0
+) {
   if (weekdayMode === "cycle") {
     return getWeekdayAtmosphereByIndex(cycleIndex);
+  }
+
+  if (weekdayMode === "fixed") {
+    return getWeekdayAtmosphereByIndex(fixedWeekdayIndex);
   }
 
   return getWeekdayAtmosphereByIndex(date.getDay());
@@ -1385,7 +1402,9 @@ function getPaletteSelection(
   cycleIndex: number,
   cycleElapsed: number,
   cycleDuration: number,
-  fixedPaletteIndex = 0
+  fixedPaletteIndex = 0,
+  fixedWeekdayIndex = 0,
+  weekdayMode: WeekdayMode = "real"
 ) {
   const date = new Date(now);
 
@@ -1404,8 +1423,8 @@ function getPaletteSelection(
   }
 
   if (paletteMode === "weekday") {
-    const day = date.getDay();
-    const index = day % palettes.length;
+    const day = weekdayMode === "fixed" ? fixedWeekdayIndex : date.getDay();
+    const index = ((day % palettes.length) + palettes.length) % palettes.length;
     return {
       previous: palettes[(index - 1 + palettes.length) % palettes.length],
       current: palettes[index],
@@ -1602,6 +1621,7 @@ export default function FlowerOfLifeClock({
   dayAtmosphereMode = "rhythm",
   dayAtmosphereStrength = 1,
   weekdayMode = "real",
+  fixedWeekdayIndex = 0,
   showWeekdayInStatus = false,
   performanceMode = "balanced",
   animatedStarLimit,
@@ -1691,8 +1711,8 @@ export default function FlowerOfLifeClock({
   const cycleIndex =
     mode === "wall-clock" ? Math.floor(now / MINUTE_MS) : Math.floor(now / effectiveCycleMs);
   const weekdayAtmosphere = useMemo(
-    () => getWeekdayAtmosphere(date, weekdayMode, cycleIndex),
-    [date, weekdayMode, cycleIndex]
+    () => getWeekdayAtmosphere(date, weekdayMode, cycleIndex, fixedWeekdayIndex),
+    [date, weekdayMode, cycleIndex, fixedWeekdayIndex]
   );
   const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
@@ -1722,9 +1742,20 @@ export default function FlowerOfLifeClock({
         cycleIndex,
         cycleElapsed,
         effectiveCycleMs,
-        fixedPaletteIndex
+        fixedPaletteIndex,
+        fixedWeekdayIndex,
+        weekdayMode
       ),
-    [now, paletteMode, cycleIndex, cycleElapsed, effectiveCycleMs, fixedPaletteIndex]
+    [
+      now,
+      paletteMode,
+      cycleIndex,
+      cycleElapsed,
+      effectiveCycleMs,
+      fixedPaletteIndex,
+      fixedWeekdayIndex,
+      weekdayMode,
+    ]
   );
 
   const palette = useMemo(

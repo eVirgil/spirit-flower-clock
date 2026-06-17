@@ -20,36 +20,64 @@ export default function App() {
   const [debugInfo, setDebugInfo] = useState<SpiritClockDebugInfo | null>(null);
 
   const handleKonamiUnlock = useCallback(() => {
-    if (devUnlocked) {
-      setDevPanelOpen(true);
+    if (!devUnlocked) {
+      setDevUnlocked(true);
+      setUnlockAnimating(true);
+      window.setTimeout(() => {
+        setUnlockAnimating(false);
+        setDevPanelOpen(true);
+      }, UNLOCK_ANIMATION_MS);
       return;
     }
-
-    setDevUnlocked(true);
-    setUnlockAnimating(true);
-    window.setTimeout(() => {
-      setUnlockAnimating(false);
-      setDevPanelOpen(true);
-    }, UNLOCK_ANIMATION_MS);
+    setDevPanelOpen(true);
   }, [devUnlocked]);
 
   useKonamiCode(handleKonamiUnlock);
+
+  const handleConfigPatch = useCallback((partial: Partial<SpiritClockConfig>) => {
+    setConfig((current) => ({ ...current, ...partial }));
+  }, []);
+
+  const handleConfigReplace = useCallback((next: SpiritClockConfig) => {
+    setConfig(next);
+  }, []);
+
+  const handleDebugInfo = useCallback((info: SpiritClockDebugInfo) => {
+    setDebugInfo((current) => {
+      if (
+        current &&
+        current.stepIndex === info.stepIndex &&
+        current.totalSteps === info.totalSteps &&
+        current.label === info.label &&
+        current.paletteName === info.paletteName &&
+        current.cycleIndex === info.cycleIndex
+      ) {
+        return current;
+      }
+      return info;
+    });
+  }, []);
+
+  const handleCloseDevPanel = useCallback(() => {
+    setDevPanelOpen(false);
+  }, []);
 
   return (
     <main className="app-shell">
       <ClockShell
         config={config}
         unlockAnimating={unlockAnimating}
-        onDebugInfo={setDebugInfo}
+        onDebugInfo={config.showDebugMetadata ? handleDebugInfo : undefined}
       />
       {config.sponsorVisibility === "show" ? <SponsorLink /> : null}
       {devUnlocked ? (
         <DeveloperPanel
           open={devPanelOpen}
           config={config}
-          debugInfo={debugInfo}
-          onClose={() => setDevPanelOpen(false)}
-          onChange={setConfig}
+          debugInfo={config.showDebugMetadata ? debugInfo : null}
+          onClose={handleCloseDevPanel}
+          onPatch={handleConfigPatch}
+          onReplace={handleConfigReplace}
         />
       ) : null}
     </main>
