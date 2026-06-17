@@ -1724,16 +1724,12 @@ export default function FlowerOfLifeClock({
   );
 
   return (
-    <div
-      className={
-        className ??
-        "w-full h-full bg-black flex flex-col items-center justify-center select-none"
-      }
-    >
-      <svg
-        viewBox={`${-half} ${-half} ${half * 2} ${half * 2}`}
-        className="w-[min(86vw,640px)] h-[min(86vw,640px)]"
-      >
+    <div className={className ?? "clock-root"}>
+      <div className="clock-stage">
+        <svg
+          viewBox={`${-half} ${-half} ${half * 2} ${half * 2}`}
+          className="clock-svg"
+        >
         <defs>
           <clipPath id="flowerClockClip">
             <circle cx={0} cy={0} r={clipRadius} />
@@ -2388,9 +2384,10 @@ export default function FlowerOfLifeClock({
           ) : null}
         </g>
       </svg>
+      </div>
 
       {showStatus ? (
-        <div className="mt-4 text-center font-sans tracking-widest">
+        <div className="clock-status">
           <div style={{ color: palette.soft, fontSize: 13 }}>
             {activeLabel} · {activeStepIndex + 1}/{totalSteps}
           </div>
