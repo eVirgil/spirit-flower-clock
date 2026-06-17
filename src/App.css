@@ -182,3 +182,21 @@
     border-right-color: var(--border);
   }
 }
+
+.sponsor-link {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.35);
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.sponsor-link:hover,
+.sponsor-link:focus {
+  color: rgba(255, 255, 255, 0.72);
+  outline: none;
+}
