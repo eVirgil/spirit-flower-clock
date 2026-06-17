@@ -424,6 +424,12 @@ export type FlowerClockProps = {
    */
   pauseWhenHidden?: boolean;
   /**
+   * Called whenever public readout fields change (time, palette, phase).
+   *
+   * Intended for external shell UI. Fires on clock ticks and step/palette changes.
+   */
+  onReadoutChange?: (readout: FlowerClockReadout) => void;
+  /**
    * Called whenever the active reveal step changes.
    *
    * Useful for status sync, telemetry, or external UI. Keep handlers cheap because
@@ -471,6 +477,32 @@ export type FlowerClockProps = {
     paletteName: string;
   }) => void;
 };
+
+export type FlowerClockReadout = {
+  timeShort: string;
+  timeFull: string;
+  paletteName: string;
+  phaseLabel: string;
+  paletteLine: string;
+  paletteSoft: string;
+};
+
+function formatTimeShort(date: Date): string {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatTimeFull(date: Date): string {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
 
 const palettes: Palette[] = [
   // Reds
@@ -1449,6 +1481,7 @@ export default function FlowerOfLifeClock({
   drawHeadTailCount,
   showHeavyGlowEffects,
   pauseWhenHidden = true,
+  onReadoutChange,
   onStepChange,
   onCircleComplete,
   onGlowStart,
@@ -1714,14 +1747,27 @@ export default function FlowerOfLifeClock({
   );
 
   const elapsedTickCount = Math.floor(cycleProgress * 60);
-  const timeLabel = useMemo(
-    () =>
-      date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    [date]
-  );
+  const timeShort = useMemo(() => formatTimeShort(date), [date]);
+  const timeFull = useMemo(() => formatTimeFull(date), [date]);
+
+  useEffect(() => {
+    onReadoutChange?.({
+      timeShort,
+      timeFull,
+      paletteName: palette.name,
+      phaseLabel: activeLabel,
+      paletteLine: palette.line,
+      paletteSoft: palette.soft,
+    });
+  }, [
+    timeShort,
+    timeFull,
+    palette.name,
+    palette.line,
+    palette.soft,
+    activeLabel,
+    onReadoutChange,
+  ]);
 
   return (
     <div className={className ?? "clock-root"}>
@@ -2393,7 +2439,7 @@ export default function FlowerOfLifeClock({
           </div>
           <div style={{ color: palette.line, fontSize: 11, marginTop: 6 }}>
             {mode === "wall-clock"
-              ? `${timeLabel} · ${Math.floor(cycleElapsed / 1000)}s / 60s · ${palette.name}${
+              ? `${timeShort} · ${Math.floor(cycleElapsed / 1000)}s / 60s · ${palette.name}${
                   showWeekdayInStatus ? ` · ${weekdayAtmosphere.name}` : ""
                 }`
               : `Cycle ${cycleIndex + 1} · ${palette.name}${

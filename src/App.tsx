@@ -1,11 +1,11 @@
 import "./App.css";
-import FlowerOfLifeClock from "./FlowerOfLifeClock";
+import ClockShell from "./ClockShell";
 import SponsorLink from "./SponsorLink";
 
 export default function App() {
   return (
     <main className="app-shell">
-      <FlowerOfLifeClock />
+      <ClockShell />
       <SponsorLink />
     </main>
   );
