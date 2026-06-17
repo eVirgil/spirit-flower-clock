@@ -45,7 +45,7 @@
  * />
  * ```
  */
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 const SQRT3 = Math.sqrt(3);
@@ -68,7 +68,9 @@ type ClockMode = "cycle" | "wall-clock";
  * - `hour`: palette follows the current hour of the day.
  * - `dayPhase`: palette follows broad time-of-day phases.
  */
-type PaletteMode = "cycle" | "hour" | "dayPhase";
+type PaletteMode = "cycle" | "hour" | "dayPhase" | "weekday" | "fixed";
+export type ForcePhase = "auto" | "circle" | "seed" | "flower" | "glow";
+export type ReducedMotionOverride = "system" | "on" | "off";
 /**
  * Controls how weekday atmosphere is selected.
  *
@@ -476,6 +478,30 @@ export type FlowerClockProps = {
     nextCycleIndex: number;
     paletteName: string;
   }) => void;
+  /**
+   * Forces the reveal to a specific geometry phase for preview or static display.
+   *
+   * Default: `"auto"`.
+   */
+  forcePhase?: ForcePhase;
+  /**
+   * Palette index used when `paletteMode="fixed"`.
+   */
+  fixedPaletteIndex?: number;
+  /** Multiplier applied to glow-layer opacity. Default: `1`. */
+  glowIntensityMul?: number;
+  /** Multiplier applied to completion glow opacity. Default: `1`. */
+  glowOpacityMul?: number;
+  /** Multiplier applied to central aura opacity. Default: `1`. */
+  auraOpacityMul?: number;
+  /** Gaussian blur strength for the standard glow filter. Default: `3`. */
+  glowBlurStrength?: number;
+  /** Stroke width for interior flower circles. Default: `2`. */
+  interiorStrokeWidth?: number;
+  /** Stroke width for boundary rings. Default: uses piece defaults. */
+  boundaryStrokeWidth?: number;
+  /** Overrides system `prefers-reduced-motion` when set. */
+  reducedMotionOverride?: ReducedMotionOverride;
 };
 
 export type FlowerClockReadout = {
@@ -1083,6 +1109,81 @@ function makeRevealSteps(r: number, clipRadius: number, outerBoundary: number) {
   };
 }
 
+function applyStrokeOverrides(
+  steps: RevealStep[],
+  interiorStrokeWidth: number,
+  boundaryStrokeWidth: number
+): RevealStep[] {
+  return steps.map((step) => ({
+    ...step,
+    pieces: step.pieces.map((piece) => ({
+      ...piece,
+      strokeWidth: step.id === "boundary-outer"
+        ? boundaryStrokeWidth / 2
+        : step.id.startsWith("boundary")
+          ? boundaryStrokeWidth
+          : interiorStrokeWidth,
+    })),
+  }));
+}
+
+type ForcedPhaseState = {
+  activeStepIndex: number;
+  activeStepProgress: number;
+  isGlowStep: boolean;
+};
+
+function resolveForcedPhase(
+  forcePhase: ForcePhase,
+  steps: RevealStep[]
+): ForcedPhaseState | null {
+  if (forcePhase === "auto") return null;
+
+  if (forcePhase === "glow") {
+    return {
+      activeStepIndex: steps.length,
+      activeStepProgress: 1,
+      isGlowStep: true,
+    };
+  }
+
+  if (forcePhase === "circle") {
+    return {
+      activeStepIndex: 0,
+      activeStepProgress: 1,
+      isGlowStep: false,
+    };
+  }
+
+  if (forcePhase === "seed") {
+    const seedIndex = steps.findLastIndex((step) => step.label === "Seed of Life");
+    return {
+      activeStepIndex: seedIndex >= 0 ? seedIndex : 0,
+      activeStepProgress: 1,
+      isGlowStep: false,
+    };
+  }
+
+  if (forcePhase === "flower") {
+    const flowerIndex = steps.findLastIndex((step) => step.label === "Flower of Life");
+    return {
+      activeStepIndex: flowerIndex >= 0 ? flowerIndex : 0,
+      activeStepProgress: 1,
+      isGlowStep: false,
+    };
+  }
+
+  const _exhaustive: never = forcePhase;
+  return _exhaustive;
+}
+
+function useEffectiveReducedMotion(override: ReducedMotionOverride = "system") {
+  const systemReduced = useReducedMotion();
+  if (override === "on") return true;
+  if (override === "off") return false;
+  return systemReduced ?? false;
+}
+
 function circlePointAtProgress(piece: Piece, progress: number) {
   const t = clamp01(progress);
   const angle = Math.PI * 2 * t;
@@ -1283,9 +1384,37 @@ function getPaletteSelection(
   paletteMode: PaletteMode,
   cycleIndex: number,
   cycleElapsed: number,
-  cycleDuration: number
+  cycleDuration: number,
+  fixedPaletteIndex = 0
 ) {
   const date = new Date(now);
+
+  if (paletteMode === "fixed") {
+    const index =
+      ((fixedPaletteIndex % palettes.length) + palettes.length) % palettes.length;
+    const palette = palettes[index];
+    return {
+      previous: palette,
+      current: palette,
+      next: palette,
+      phaseElapsed: cycleElapsed,
+      phaseDuration: cycleDuration,
+      paletteCycleIndex: index,
+    };
+  }
+
+  if (paletteMode === "weekday") {
+    const day = date.getDay();
+    const index = day % palettes.length;
+    return {
+      previous: palettes[(index - 1 + palettes.length) % palettes.length],
+      current: palettes[index],
+      next: palettes[(index + 1) % palettes.length],
+      phaseElapsed: cycleElapsed,
+      phaseDuration: cycleDuration,
+      paletteCycleIndex: index,
+    };
+  }
 
   if (paletteMode === "hour") {
     const hour = date.getHours();
@@ -1486,7 +1615,17 @@ export default function FlowerOfLifeClock({
   onCircleComplete,
   onGlowStart,
   onCycleComplete,
+  forcePhase = "auto",
+  fixedPaletteIndex = 0,
+  glowIntensityMul = 1,
+  glowOpacityMul = 1,
+  auraOpacityMul = 1,
+  glowBlurStrength = 3,
+  interiorStrokeWidth = 2,
+  boundaryStrokeWidth = 6,
+  reducedMotionOverride = "system",
 }: FlowerClockProps) {
+  const reducedMotion = useEffectiveReducedMotion(reducedMotionOverride);
   const performanceConfig = getPerformanceConfig(performanceMode);
   const safeTickMs = Math.max(16, tickMs ?? performanceConfig.defaultTickMs);
   const now = useNow(safeTickMs, pauseWhenHidden);
@@ -1494,29 +1633,33 @@ export default function FlowerOfLifeClock({
   const effectiveStarCount = Math.max(0, Math.min(140, starCount ?? performanceConfig.defaultStarCount));
   const effectiveAnimatedStarLimit = Math.max(
     0,
-    Math.min(effectiveStarCount, animatedStarLimit ?? performanceConfig.animatedStarLimit)
+    Math.min(
+      effectiveStarCount,
+      reducedMotion ? 0 : (animatedStarLimit ?? performanceConfig.animatedStarLimit)
+    )
   );
   const effectiveAnimatedIntersectionNodeLimit = Math.max(
     0,
-    animatedIntersectionNodeLimit ?? performanceConfig.animatedIntersectionNodeLimit
+    reducedMotion ? 0 : (animatedIntersectionNodeLimit ?? performanceConfig.animatedIntersectionNodeLimit)
   );
   const effectiveDrawHeadParticleCount = Math.max(
     0,
-    drawHeadParticleCount ?? performanceConfig.drawHeadParticleCount
+    reducedMotion ? 0 : (drawHeadParticleCount ?? performanceConfig.drawHeadParticleCount)
   );
   const effectiveDrawHeadTailCount = Math.max(
     0,
     drawHeadTailCount ?? performanceConfig.drawHeadTailCount
   );
-  const heavyGlowEffectsEnabled = showHeavyGlowEffects ?? performanceConfig.heavyGlowEffects;
+  const heavyGlowEffectsEnabled =
+    (showHeavyGlowEffects ?? performanceConfig.heavyGlowEffects) && !reducedMotion;
 
   const safeCycleMs = Math.max(1_000, cycleMs);
   const effectiveCycleMs = mode === "wall-clock" ? MINUTE_MS : safeCycleMs;
 
   const date = useMemo(() => new Date(now), [now]);
   const dayStrength = showDayAtmosphere ? clamp01(dayAtmosphereStrength) : 0;
-  const dayRhythmEnabled = dayStrength > 0 && hasDayRhythm(dayAtmosphereMode);
-  const dayWeatherEnabled = dayStrength > 0 && hasDayWeather(dayAtmosphereMode);
+  const dayRhythmEnabled = dayStrength > 0 && hasDayRhythm(dayAtmosphereMode) && !reducedMotion;
+  const dayWeatherEnabled = dayStrength > 0 && hasDayWeather(dayAtmosphereMode) && !reducedMotion;
   const dayAuraEnabled = dayStrength > 0 && hasDayAura(dayAtmosphereMode);
   const clipRadius = clipMul * r;
   const outerBoundary = clipRadius + boundaryOffset;
@@ -1524,9 +1667,19 @@ export default function FlowerOfLifeClock({
   const pad = showMinuteTicks ? 64 : 44;
   const half = outerBoundary + pad;
 
-  const { steps, allPieces } = useMemo(
+  const { steps: baseSteps } = useMemo(
     () => makeRevealSteps(r, clipRadius, outerBoundary),
     [r, clipRadius, outerBoundary]
+  );
+
+  const steps = useMemo(
+    () => applyStrokeOverrides(baseSteps, interiorStrokeWidth, boundaryStrokeWidth),
+    [baseSteps, interiorStrokeWidth, boundaryStrokeWidth]
+  );
+
+  const allPieces = useMemo(
+    () => steps.flatMap((step) => step.pieces),
+    [steps]
   );
 
   // Geometry steps + one final glow step.
@@ -1544,20 +1697,34 @@ export default function FlowerOfLifeClock({
   const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
   const stepFloat = cycleElapsed / stepMs;
-  const activeStepIndex = Math.min(totalSteps - 1, Math.floor(stepFloat));
-  const rawStepProgress = easeInOutQuart(stepFloat - activeStepIndex);
-  const isGlowStep = activeStepIndex >= steps.length;
+  const computedStepIndex = Math.min(totalSteps - 1, Math.floor(stepFloat));
+  const forcedPhase = useMemo(
+    () => resolveForcedPhase(forcePhase, steps),
+    [forcePhase, steps]
+  );
+  const activeStepIndex = forcedPhase?.activeStepIndex ?? computedStepIndex;
+  const rawStepProgress = easeInOutQuart(stepFloat - computedStepIndex);
+  const isGlowStep = forcedPhase?.isGlowStep ?? activeStepIndex >= steps.length;
 
   // Apply lerp smoothing for butter-smooth animations (resets on step change).
-  const activeStepProgress = useLerpedProgress(
+  const lerpedStepProgress = useLerpedProgress(
     rawStepProgress,
     lerpFactor,
-    activeStepIndex
+    computedStepIndex
   );
+  const activeStepProgress = forcedPhase?.activeStepProgress ?? lerpedStepProgress;
 
   const paletteSelection = useMemo(
-    () => getPaletteSelection(now, paletteMode, cycleIndex, cycleElapsed, effectiveCycleMs),
-    [now, paletteMode, cycleIndex, cycleElapsed, effectiveCycleMs]
+    () =>
+      getPaletteSelection(
+        now,
+        paletteMode,
+        cycleIndex,
+        cycleElapsed,
+        effectiveCycleMs,
+        fixedPaletteIndex
+      ),
+    [now, paletteMode, cycleIndex, cycleElapsed, effectiveCycleMs, fixedPaletteIndex]
   );
 
   const palette = useMemo(
@@ -1724,11 +1891,14 @@ export default function FlowerOfLifeClock({
   );
 
   const glowOpacity = useMemo(
-    () => (isGlowStep ? 0.2 + glowProgress * 0.7 : 0),
-    [isGlowStep, glowProgress]
+    () =>
+      (isGlowStep ? 0.2 + glowProgress * 0.7 : 0) *
+      clamp01(glowOpacityMul) *
+      clamp01(glowIntensityMul),
+    [isGlowStep, glowProgress, glowOpacityMul, glowIntensityMul]
   );
 
-  const baseAuraOpacity = 0.35 + glowOpacity * 0.65;
+  const baseAuraOpacity = (0.35 + glowOpacity * 0.65) * clamp01(auraOpacityMul);
   const dayTintOpacity = dayStrength * weekdayAtmosphere.tintOpacity;
   const dayAuraOpacityBoost = dayAuraEnabled
     ? dayStrength * weekdayAtmosphere.auraOpacityBoost
@@ -1789,7 +1959,7 @@ export default function FlowerOfLifeClock({
 
           {/* Enhanced multi-layer glow filters */}
           <filter id="flowerClockGlow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feGaussianBlur stdDeviation={glowBlurStrength} result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />

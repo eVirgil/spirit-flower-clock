@@ -371,3 +371,325 @@
   color: rgba(255, 255, 255, 0.72);
   outline: none;
 }
+
+/* Clock size presets (developer mode) */
+.clock-size--small .clock-svg {
+  width: min(72cqw, 72cqh);
+  height: min(72cqw, 72cqh);
+}
+
+.clock-size--large .clock-svg {
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+}
+
+.clock-size--fullscreen .clock-stage {
+  padding: 0;
+}
+
+.clock-size--fullscreen .clock-svg {
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+}
+
+/* Konami unlock acknowledgement */
+.flower-clock-shell--unlock {
+  animation: dev-unlock-pulse 1.3s ease-out;
+}
+
+.dev-unlock-banner {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: var(--sans);
+  font-size: clamp(0.65rem, 1.6vw, 0.82rem);
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(255, 248, 220, 0.92);
+  text-shadow: 0 0 24px rgba(255, 215, 120, 0.45);
+  animation: dev-unlock-text 1.3s ease-out forwards;
+}
+
+@keyframes dev-unlock-pulse {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(255, 230, 150, 0);
+  }
+  35% {
+    box-shadow: inset 0 0 80px 12px rgba(255, 230, 150, 0.22);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(255, 230, 150, 0);
+  }
+}
+
+@keyframes dev-unlock-text {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Developer panel */
+.dev-panel {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: max(0.75rem, env(safe-area-inset-right, 0px));
+  z-index: 100;
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(88vh, calc(100dvh - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(12, 12, 14, 0.94);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+}
+
+.dev-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dev-panel-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dev-close {
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dev-close:hover,
+.dev-close:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 2px solid rgba(255, 220, 140, 0.55);
+  outline-offset: 1px;
+}
+
+.dev-panel-scroll {
+  overflow: auto;
+  padding: 0.65rem 0.75rem 0.85rem;
+}
+
+.dev-section + .dev-section {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dev-section-title,
+.dev-subsection-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dev-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 0.55rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.dev-section-chevron {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dev-subsection + .dev-subsection {
+  margin-top: 0.75rem;
+}
+
+.dev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+
+.dev-label {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+}
+
+.dev-hint {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.dev-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.dev-segment {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.32rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.dev-segment--active {
+  border-color: rgba(255, 220, 140, 0.45);
+  background: rgba(255, 220, 140, 0.12);
+  color: rgba(255, 248, 220, 0.95);
+}
+
+.dev-segment:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.dev-select,
+.dev-input,
+.dev-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.38rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+.dev-field--slider .dev-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dev-value {
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-range {
+  width: 100%;
+  accent-color: rgba(255, 220, 140, 0.85);
+}
+
+.dev-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.dev-debug {
+  margin: 0 0 0.55rem;
+  padding: 0.45rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  line-height: 1.4;
+  overflow: auto;
+  max-height: 8rem;
+}
+
+.dev-note {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.68rem;
+  font-style: italic;
+}
+
+.dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.dev-button {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.dev-button:hover,
+.dev-button:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 2px solid rgba(255, 220, 140, 0.45);
+  outline-offset: 1px;
+}
+
+.dev-status {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 220, 140, 0.75);
+  font-size: 0.66rem;
+}
+
+@media (max-width: 640px) {
+  .dev-panel {
+    left: max(0.75rem, env(safe-area-inset-left, 0px));
+    right: max(0.75rem, env(safe-area-inset-right, 0px));
+    width: auto;
+    max-height: min(52vh, calc(100dvh - 1.5rem));
+  }
+}
