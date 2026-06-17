@@ -2468,7 +2468,7 @@ export const DEFAULT_CLOCK_CONFIG = {
 
   showStarfield: true,
   showDayAtmosphere: true,
-  dayAtmosphereMode: "rhythm",
+  dayAtmosphereMode: "weather",
   dayAtmosphereStrength: 0.75,
   weekdayMode: "real",
   showWeekdayInStatus: false,
