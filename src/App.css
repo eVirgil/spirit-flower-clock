@@ -596,6 +596,12 @@
   line-height: 1.35;
 }
 
+.dev-option-desc {
+  color: rgba(255, 220, 140, 0.55);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
 .dev-segmented {
   display: flex;
   flex-wrap: wrap;

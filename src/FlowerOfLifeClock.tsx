@@ -47,6 +47,7 @@
  */
 import { motion, useReducedMotion } from "framer-motion";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { resolveWeekdayIndex, type WeekdayMode } from "./weekdayMode";
 
 const SQRT3 = Math.sqrt(3);
 const MINUTE_MS = 60_000;
@@ -71,14 +72,7 @@ type ClockMode = "cycle" | "wall-clock";
 type PaletteMode = "cycle" | "hour" | "dayPhase" | "weekday" | "fixed";
 export type ForcePhase = "auto" | "circle" | "seed" | "flower" | "glow";
 export type ReducedMotionOverride = "system" | "on" | "off";
-/**
- * Controls how weekday atmosphere is selected.
- *
- * - `real`: use the actual current weekday.
- * - `cycle`: cycle weekday atmosphere by redraw index for testing/demo mode.
- * - `fixed`: use `fixedWeekdayIndex` for preview/testing.
- */
-type WeekdayMode = "real" | "cycle" | "fixed";
+export type { WeekdayMode };
 /**
  * Weekday background behavior mode.
  *
@@ -365,11 +359,14 @@ export type FlowerClockProps = {
    */
   dayAtmosphereStrength?: number;
   /**
-   * Selects weekday source for atmosphere.
+   * Selects weekday identity for atmosphere and weekday palette mode.
    *
-   * - `real`: actual local weekday from `Date`.
-   * - `cycle`: weekday index follows `cycleIndex`, useful for testing each style.
-   * - `fixed`: weekday from `fixedWeekdayIndex`.
+   * - `off`: no weekday identity (atmosphere disabled via config; palette falls back to cycle).
+   * - `cycle-day`: real local weekday from `Date`.
+   * - `cycle-minute`: advances each redraw cycle (`cycleIndex % 7`).
+   * - `cycle-seven-minutes`: advances every full palette cycle.
+   * - `cycle-hour`: advances once per hour.
+   * - `fixed`: locks to `fixedWeekdayIndex`.
    */
   weekdayMode?: WeekdayMode;
   /**
@@ -879,20 +876,22 @@ function getWeekdayAtmosphereByIndex(index: number) {
 }
 
 function getWeekdayAtmosphere(
+  now: number,
   date: Date,
   weekdayMode: WeekdayMode,
   cycleIndex: number,
   fixedWeekdayIndex = 0
 ) {
-  if (weekdayMode === "cycle") {
-    return getWeekdayAtmosphereByIndex(cycleIndex);
-  }
+  const index = resolveWeekdayIndex({
+    now,
+    date,
+    weekdayMode,
+    cycleIndex,
+    fixedWeekdayIndex,
+    paletteCount: palettes.length,
+  });
 
-  if (weekdayMode === "fixed") {
-    return getWeekdayAtmosphereByIndex(fixedWeekdayIndex);
-  }
-
-  return getWeekdayAtmosphereByIndex(date.getDay());
+  return getWeekdayAtmosphereByIndex(index ?? 0);
 }
 
 /**
@@ -1404,7 +1403,7 @@ function getPaletteSelection(
   cycleDuration: number,
   fixedPaletteIndex = 0,
   fixedWeekdayIndex = 0,
-  weekdayMode: WeekdayMode = "real"
+  weekdayMode: WeekdayMode = "cycle-day"
 ) {
   const date = new Date(now);
 
@@ -1423,8 +1422,28 @@ function getPaletteSelection(
   }
 
   if (paletteMode === "weekday") {
-    const day = weekdayMode === "fixed" ? fixedWeekdayIndex : date.getDay();
-    const index = ((day % palettes.length) + palettes.length) % palettes.length;
+    const weekdayIndex = resolveWeekdayIndex({
+      now,
+      date,
+      weekdayMode,
+      cycleIndex,
+      fixedWeekdayIndex,
+      paletteCount: palettes.length,
+    });
+
+    if (weekdayIndex === null) {
+      return {
+        previous: palettes[(cycleIndex - 1 + palettes.length) % palettes.length],
+        current: palettes[cycleIndex % palettes.length],
+        next: palettes[(cycleIndex + 1) % palettes.length],
+        phaseElapsed: cycleElapsed,
+        phaseDuration: cycleDuration,
+        paletteCycleIndex: cycleIndex,
+      };
+    }
+
+    const index =
+      ((weekdayIndex % palettes.length) + palettes.length) % palettes.length;
     return {
       previous: palettes[(index - 1 + palettes.length) % palettes.length],
       current: palettes[index],
@@ -1620,7 +1639,7 @@ export default function FlowerOfLifeClock({
   showDayAtmosphere = true,
   dayAtmosphereMode = "rhythm",
   dayAtmosphereStrength = 1,
-  weekdayMode = "real",
+  weekdayMode = "cycle-day",
   fixedWeekdayIndex = 0,
   showWeekdayInStatus = false,
   performanceMode = "balanced",
@@ -1711,8 +1730,8 @@ export default function FlowerOfLifeClock({
   const cycleIndex =
     mode === "wall-clock" ? Math.floor(now / MINUTE_MS) : Math.floor(now / effectiveCycleMs);
   const weekdayAtmosphere = useMemo(
-    () => getWeekdayAtmosphere(date, weekdayMode, cycleIndex, fixedWeekdayIndex),
-    [date, weekdayMode, cycleIndex, fixedWeekdayIndex]
+    () => getWeekdayAtmosphere(now, date, weekdayMode, cycleIndex, fixedWeekdayIndex),
+    [now, date, weekdayMode, cycleIndex, fixedWeekdayIndex]
   );
   const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
@@ -2671,7 +2690,7 @@ export const DEFAULT_CLOCK_CONFIG = {
   showDayAtmosphere: true,
   dayAtmosphereMode: "weather",
   dayAtmosphereStrength: 0.75,
-  weekdayMode: "real",
+  weekdayMode: "cycle-day",
   showWeekdayInStatus: false,
 
   paletteTransitionMs: 1500,
@@ -2696,7 +2715,7 @@ export const DEMO_CLOCK_CONFIG = {
   showDayAtmosphere: true,
   dayAtmosphereMode: "full",
   dayAtmosphereStrength: 1,
-  weekdayMode: "cycle",
+  weekdayMode: "cycle-minute",
   showWeekdayInStatus: true,
 
   paletteTransitionMs: 1200,

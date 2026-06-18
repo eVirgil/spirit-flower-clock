@@ -25,6 +25,7 @@ import {
   type SponsorVisibility,
   type WeekdayMode,
 } from "./spiritClockConfig";
+import { WEEKDAY_NAMES, wrapWeekdayIndex } from "./weekdayMode";
 
 type DeveloperPanelProps = {
   open: boolean;
@@ -35,7 +36,19 @@ type DeveloperPanelProps = {
   onReplace: (next: SpiritClockConfig) => void;
 };
 
-type Option<T extends string> = { value: T; label: string; disabled?: boolean };
+type Option<T extends string> = {
+  value: T;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+};
+
+function selectedOptionDescription<T extends string>(
+  options: Option<T>[],
+  value: T
+): string | undefined {
+  return options.find((option) => option.value === value)?.description;
+}
 
 function SegmentedControl<T extends string>({
   label,
@@ -58,6 +71,11 @@ function SegmentedControl<T extends string>({
         {label}
       </span>
       {hint ? <span className="dev-hint">{hint}</span> : null}
+      {selectedOptionDescription(options, value) ? (
+        <span className="dev-option-desc">
+          {selectedOptionDescription(options, value)}
+        </span>
+      ) : null}
       <div className="dev-segmented" role="group" aria-labelledby={groupId}>
         {options.map((option) => (
           <button
@@ -101,6 +119,11 @@ function SelectControl<T extends string>({
         {label}
       </label>
       {hint ? <span className="dev-hint">{hint}</span> : null}
+      {selectedOptionDescription(options, value) ? (
+        <span className="dev-option-desc">
+          {selectedOptionDescription(options, value)}
+        </span>
+      ) : null}
       <select
         id={selectId}
         className="dev-select"
@@ -240,59 +263,170 @@ const Section = memo(function Section({
 });
 
 const CLOCK_MODE_OPTIONS: Option<ClockMode>[] = [
-  { value: "living-clock", label: "Living Clock" },
-  { value: "ambient-clock", label: "Ambient Clock", disabled: true },
-  { value: "static-emblem", label: "Static Emblem" },
-  { value: "showcase", label: "Showcase", disabled: true },
+  {
+    value: "living-clock",
+    label: "Living Clock",
+    description: "Wall-clock mode with draw head; follows real time.",
+  },
+  {
+    value: "ambient-clock",
+    label: "Ambient Clock",
+    description: "Wall-clock mode without minute ticks.",
+    disabled: true,
+  },
+  {
+    value: "static-emblem",
+    label: "Static Emblem",
+    description: "Frozen glow phase for emblem-style display.",
+  },
+  {
+    value: "showcase",
+    label: "Showcase",
+    description: "Demo cycle with minute ticks for presentations.",
+    disabled: true,
+  },
 ];
 
 const PALETTE_MODE_OPTIONS: Option<PaletteMode>[] = [
-  { value: "cycle", label: "Cycle Every Minute" },
-  { value: "fixed", label: "Fixed Palette" },
-  { value: "weekday", label: "Weekday Palette" },
-  { value: "day-atmosphere", label: "Day Atmosphere" },
+  {
+    value: "cycle",
+    label: "Cycle Every Minute",
+    description: "Palette changes each redraw cycle.",
+  },
+  {
+    value: "hour",
+    label: "Hour",
+    description: "Palette follows the current hour.",
+  },
+  {
+    value: "day-atmosphere",
+    label: "Day Phase",
+    description: "Palette follows broad time-of-day phases.",
+  },
+  {
+    value: "weekday",
+    label: "Weekday",
+    description: "Palette follows the selected Weekday Mode.",
+  },
+  {
+    value: "fixed",
+    label: "Fixed",
+    description: "Locks to a selected palette index.",
+  },
 ];
 
 const WEEKDAY_MODE_OPTIONS: Option<WeekdayMode>[] = [
-  { value: "off", label: "Off" },
-  { value: "subtle", label: "Subtle Weekday Shift" },
-  { value: "distinct", label: "Distinct Daily Theme" },
-  { value: "fixed", label: "Fixed Weekday" },
-];
-
-const FIXED_WEEKDAY_OPTIONS: Option<string>[] = [
-  { value: "0", label: "Sunday (0)" },
-  { value: "1", label: "Monday (1)" },
-  { value: "2", label: "Tuesday (2)" },
-  { value: "3", label: "Wednesday (3)" },
-  { value: "4", label: "Thursday (4)" },
-  { value: "5", label: "Friday (5)" },
-  { value: "6", label: "Saturday (6)" },
+  {
+    value: "off",
+    label: "Off",
+    description:
+      "Disables weekday-based atmosphere and weekday-based palette selection.",
+  },
+  {
+    value: "cycle-day",
+    label: "Cycle Every Day",
+    description:
+      "Uses the real local weekday. Each day of the week has its own atmosphere/palette identity.",
+  },
+  {
+    value: "cycle-minute",
+    label: "Cycle Every Minute",
+    description:
+      "Advances the weekday identity every redraw cycle, matching the normal minute-by-minute palette cycle.",
+  },
+  {
+    value: "cycle-seven-minutes",
+    label: "Cycle Every 7 Minutes",
+    description: "Advances the weekday identity after each full seven-palette cycle.",
+  },
+  {
+    value: "cycle-hour",
+    label: "Cycle Every Hour",
+    description: "Advances the weekday identity once per hour.",
+  },
+  {
+    value: "fixed",
+    label: "Fixed Day",
+    description:
+      "Locks the weekday identity to a selected day index for previewing or screenshots.",
+  },
 ];
 
 const DAY_ATMOSPHERE_OPTIONS: Option<DayAtmosphereMode>[] = [
-  { value: "off", label: "Off" },
-  { value: "solar", label: "Solar Day Cycle" },
-  { value: "mood", label: "Ambient Mood" },
+  {
+    value: "off",
+    label: "Off",
+    description: "No weekday atmosphere blending.",
+  },
+  {
+    value: "solar",
+    label: "Solar Day Cycle",
+    description: "Full weekday atmosphere driven by solar day cycle.",
+  },
+  {
+    value: "mood",
+    label: "Ambient Mood",
+    description: "Softer atmosphere blend for ambient display.",
+  },
 ];
 
 const DAY_ATMOSPHERE_BEHAVIOR_OPTIONS: Option<DayAtmosphereBehavior>[] = [
-  { value: "rhythm", label: "Rhythm" },
-  { value: "weather", label: "Weather" },
-  { value: "aura", label: "Aura" },
-  { value: "full", label: "Full" },
+  {
+    value: "rhythm",
+    label: "Rhythm",
+    description: "Star twinkle timing and aura breathing.",
+  },
+  {
+    value: "weather",
+    label: "Weather",
+    description: "Rhythm plus directional star drift.",
+  },
+  {
+    value: "aura",
+    label: "Aura",
+    description: "Sky tint and aura only.",
+  },
+  {
+    value: "full",
+    label: "Full",
+    description: "All weekday atmosphere effects.",
+  },
 ];
 
 const PERFORMANCE_OPTIONS: Option<PerformanceMode>[] = [
-  { value: "quality", label: "Quality" },
-  { value: "balanced", label: "Balanced" },
-  { value: "low-power", label: "Low Power" },
+  {
+    value: "quality",
+    label: "Quality",
+    description: "Richer visuals, higher GPU/CPU cost.",
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "Recommended default.",
+  },
+  {
+    value: "low-power",
+    label: "Low Power",
+    description: "Reduced animation for mobile, laptops, or always-on displays.",
+  },
 ];
 
 const REDUCED_MOTION_OPTIONS: Option<ReducedMotionMode>[] = [
-  { value: "system", label: "Use System Setting" },
-  { value: "on", label: "Reduced Motion On" },
-  { value: "off", label: "Reduced Motion Off" },
+  {
+    value: "system",
+    label: "Use System Setting",
+    description: "Follow the OS reduced-motion preference.",
+  },
+  {
+    value: "on",
+    label: "Reduced Motion On",
+    description: "Force reduced or disabled motion-heavy effects.",
+  },
+  {
+    value: "off",
+    label: "Reduced Motion Off",
+    description: "Allow full motion regardless of system setting.",
+  },
 ];
 
 const GLOW_OPTIONS: Option<GlowIntensity>[] = [
@@ -357,6 +491,7 @@ const CommonControls = memo(function CommonControls({
         value={config.clockMode}
         options={CLOCK_MODE_OPTIONS}
         onChange={(clockMode: ClockMode) => onPatch({ clockMode })}
+        hint="Controls whether the flower redraw follows real time or a custom demo cycle."
       />
 
       <SelectControl
@@ -364,6 +499,7 @@ const CommonControls = memo(function CommonControls({
         value={config.paletteMode}
         options={PALETTE_MODE_OPTIONS}
         onChange={(paletteMode: PaletteMode) => onPatch({ paletteMode })}
+        hint="Controls how the active color palette is chosen."
       />
 
       {config.paletteMode === "fixed" ? (
@@ -371,7 +507,7 @@ const CommonControls = memo(function CommonControls({
           label="Fixed Palette Index"
           value={config.fixedPaletteIndex}
           min={0}
-          max={23}
+          max={6}
           onChange={(fixedPaletteIndex) => onPatch({ fixedPaletteIndex })}
         />
       ) : null}
@@ -381,16 +517,17 @@ const CommonControls = memo(function CommonControls({
         value={config.weekdayMode}
         options={WEEKDAY_MODE_OPTIONS}
         onChange={(weekdayMode: WeekdayMode) => onPatch({ weekdayMode })}
-        hint="Affects atmosphere when weekday palette or subtle shifts are active."
+        hint="Controls how weekday identity is chosen for weekday atmosphere and weekday palette mode."
       />
 
       {config.weekdayMode === "fixed" ? (
-        <SelectControl
-          label="Fixed Weekday Index"
-          value={String(config.fixedWeekdayIndex)}
-          options={FIXED_WEEKDAY_OPTIONS}
-          onChange={(value) => onPatch({ fixedWeekdayIndex: Number(value) })}
-          hint="Locks atmosphere and weekday palette to this day (0 = Sunday)."
+        <NumberControl
+          label={`Fixed Day Index: ${wrapWeekdayIndex(config.fixedWeekdayIndex)} — ${WEEKDAY_NAMES[wrapWeekdayIndex(config.fixedWeekdayIndex)]}`}
+          value={wrapWeekdayIndex(config.fixedWeekdayIndex)}
+          min={0}
+          max={6}
+          onChange={(fixedWeekdayIndex) => onPatch({ fixedWeekdayIndex })}
+          hint="0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday."
         />
       ) : null}
 
@@ -399,7 +536,7 @@ const CommonControls = memo(function CommonControls({
         value={config.dayAtmosphereMode}
         options={DAY_ATMOSPHERE_OPTIONS}
         onChange={(dayAtmosphereMode: DayAtmosphereMode) => onPatch({ dayAtmosphereMode })}
-        hint="Solar enables weekday atmosphere; Ambient Mood softens blend strength."
+        hint="Enables weekday atmosphere blending. Off when Weekday Mode is Off."
       />
 
       <SelectControl
@@ -409,7 +546,7 @@ const CommonControls = memo(function CommonControls({
         onChange={(dayAtmosphereBehavior: DayAtmosphereBehavior) =>
           onPatch({ dayAtmosphereBehavior })
         }
-        hint="Rhythm: star timing + aura. Weather: adds star drift. Aura: tint only. Full: all effects."
+        hint="Controls which background atmosphere channels respond to weekday identity."
       />
 
       <SegmentedControl
@@ -417,6 +554,7 @@ const CommonControls = memo(function CommonControls({
         value={config.performanceMode}
         options={PERFORMANCE_OPTIONS}
         onChange={(performanceMode: PerformanceMode) => onPatch({ performanceMode })}
+        hint="Controls animation cost and visual richness."
       />
 
       <SelectControl
@@ -424,6 +562,7 @@ const CommonControls = memo(function CommonControls({
         value={config.reducedMotion}
         options={REDUCED_MOTION_OPTIONS}
         onChange={(reducedMotion: ReducedMotionMode) => onPatch({ reducedMotion })}
+        hint="Controls whether motion-heavy effects are reduced or disabled."
       />
 
       <SegmentedControl

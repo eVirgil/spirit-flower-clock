@@ -3,8 +3,10 @@ import {
   type FlowerClockProps,
   type ForcePhase,
 } from "./FlowerOfLifeClock";
+import { migrateWeekdayMode, type WeekdayMode } from "./weekdayMode";
 
 export type { ForcePhase };
+export type { WeekdayMode };
 
 export type ClockMode =
   | "living-clock"
@@ -12,9 +14,7 @@ export type ClockMode =
   | "static-emblem"
   | "showcase";
 
-export type PaletteMode = "cycle" | "fixed" | "weekday" | "day-atmosphere";
-
-export type WeekdayMode = "off" | "subtle" | "distinct" | "fixed";
+export type PaletteMode = "cycle" | "hour" | "day-atmosphere" | "weekday" | "fixed";
 
 export type DayAtmosphereMode = "off" | "solar" | "mood";
 
@@ -75,7 +75,7 @@ export type SpiritClockDebugInfo = {
 export const DEFAULT_SPIRIT_CLOCK_CONFIG: SpiritClockConfig = {
   clockMode: "living-clock",
   paletteMode: "day-atmosphere",
-  weekdayMode: "subtle",
+  weekdayMode: "cycle-day",
   dayAtmosphereMode: "solar",
   dayAtmosphereBehavior: "weather",
   performanceMode: "balanced",
@@ -126,6 +126,8 @@ function mapPaletteMode(mode: PaletteMode): FlowerClockProps["paletteMode"] {
   switch (mode) {
     case "cycle":
       return "cycle";
+    case "hour":
+      return "hour";
     case "fixed":
       return "fixed";
     case "weekday":
@@ -139,45 +141,29 @@ function mapPaletteMode(mode: PaletteMode): FlowerClockProps["paletteMode"] {
   }
 }
 
-function weekdayAtmosphereStrength(config: SpiritClockConfig): number {
-  switch (config.weekdayMode) {
-    case "off":
-      return 0;
-    case "distinct":
-      return 0.85;
-    case "subtle":
-    case "fixed":
-    default:
-      return 0.75;
-  }
-}
-
-function mapWeekdaySource(config: SpiritClockConfig): FlowerClockProps["weekdayMode"] {
-  if (config.weekdayMode === "fixed") return "fixed";
-  return "real";
-}
-
 function mapDayAtmosphere(config: SpiritClockConfig): Pick<
   FlowerClockProps,
   "showDayAtmosphere" | "dayAtmosphereMode" | "dayAtmosphereStrength" | "weekdayMode"
 > {
-  if (config.dayAtmosphereMode === "off" || config.weekdayMode === "off") {
+  const atmosphereDisabled =
+    config.dayAtmosphereMode === "off" || config.weekdayMode === "off";
+
+  if (atmosphereDisabled) {
     return {
       showDayAtmosphere: false,
       dayAtmosphereMode: "rhythm",
       dayAtmosphereStrength: 0,
-      weekdayMode: "real",
+      weekdayMode: config.weekdayMode,
     };
   }
 
-  const strength =
-    config.dayAtmosphereMode === "mood" ? 0.55 : weekdayAtmosphereStrength(config);
+  const strength = config.dayAtmosphereMode === "mood" ? 0.55 : 0.75;
 
   return {
     showDayAtmosphere: true,
     dayAtmosphereMode: config.dayAtmosphereBehavior,
     dayAtmosphereStrength: strength,
-    weekdayMode: mapWeekdaySource(config),
+    weekdayMode: config.weekdayMode,
   };
 }
 
@@ -288,8 +274,14 @@ export function clockSizeClass(size: ClockSize): string {
 
 export function parseSpiritClockConfig(json: string): SpiritClockConfig | null {
   try {
-    const parsed = JSON.parse(json) as Partial<SpiritClockConfig>;
-    return { ...DEFAULT_SPIRIT_CLOCK_CONFIG, ...parsed };
+    const parsed = JSON.parse(json) as Partial<SpiritClockConfig> & {
+      weekdayMode?: unknown;
+    };
+    return {
+      ...DEFAULT_SPIRIT_CLOCK_CONFIG,
+      ...parsed,
+      weekdayMode: migrateWeekdayMode(parsed.weekdayMode),
+    };
   } catch {
     return null;
   }
