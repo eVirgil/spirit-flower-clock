@@ -3,10 +3,15 @@ import {
   type FlowerClockProps,
   type ForcePhase,
 } from "./FlowerOfLifeClock";
+import {
+  migrateBackgroundMode,
+  type BackgroundLayerMode,
+} from "./backgroundThemes";
 import { migrateWeekdayMode, type WeekdayMode } from "./weekdayMode";
 
 export type { ForcePhase };
 export type { WeekdayMode };
+export type { BackgroundLayerMode as BackgroundMode };
 
 export type ClockMode =
   | "living-clock"
@@ -15,11 +20,6 @@ export type ClockMode =
   | "showcase";
 
 export type PaletteMode = "cycle" | "hour" | "day-atmosphere" | "weekday" | "fixed";
-
-export type DayAtmosphereMode = "off" | "solar" | "mood";
-
-/** Weekday background channel — maps to FlowerOfLifeClock `dayAtmosphereMode`. */
-export type DayAtmosphereBehavior = "rhythm" | "weather" | "aura" | "full";
 
 export type PerformanceMode = "quality" | "balanced" | "low-power";
 
@@ -37,8 +37,8 @@ export type SpiritClockConfig = {
   clockMode: ClockMode;
   paletteMode: PaletteMode;
   weekdayMode: WeekdayMode;
-  dayAtmosphereMode: DayAtmosphereMode;
-  dayAtmosphereBehavior: DayAtmosphereBehavior;
+  backgroundMode: BackgroundLayerMode;
+  backgroundIntensity: number;
   performanceMode: PerformanceMode;
   reducedMotion: ReducedMotionMode;
   glowIntensity: GlowIntensity;
@@ -76,8 +76,8 @@ export const DEFAULT_SPIRIT_CLOCK_CONFIG: SpiritClockConfig = {
   clockMode: "living-clock",
   paletteMode: "day-atmosphere",
   weekdayMode: "cycle-day",
-  dayAtmosphereMode: "solar",
-  dayAtmosphereBehavior: "weather",
+  backgroundMode: "full",
+  backgroundIntensity: 0.75,
   performanceMode: "balanced",
   reducedMotion: "system",
   glowIntensity: "normal",
@@ -141,28 +141,26 @@ function mapPaletteMode(mode: PaletteMode): FlowerClockProps["paletteMode"] {
   }
 }
 
-function mapDayAtmosphere(config: SpiritClockConfig): Pick<
+function mapBackground(config: SpiritClockConfig): Pick<
   FlowerClockProps,
-  "showDayAtmosphere" | "dayAtmosphereMode" | "dayAtmosphereStrength" | "weekdayMode"
+  "showBackground" | "backgroundMode" | "backgroundStrength" | "weekdayMode"
 > {
-  const atmosphereDisabled =
-    config.dayAtmosphereMode === "off" || config.weekdayMode === "off";
+  const backgroundDisabled =
+    config.backgroundMode === "off" || config.weekdayMode === "off";
 
-  if (atmosphereDisabled) {
+  if (backgroundDisabled) {
     return {
-      showDayAtmosphere: false,
-      dayAtmosphereMode: "rhythm",
-      dayAtmosphereStrength: 0,
+      showBackground: false,
+      backgroundMode: "off",
+      backgroundStrength: 0,
       weekdayMode: config.weekdayMode,
     };
   }
 
-  const strength = config.dayAtmosphereMode === "mood" ? 0.55 : 0.75;
-
   return {
-    showDayAtmosphere: true,
-    dayAtmosphereMode: config.dayAtmosphereBehavior,
-    dayAtmosphereStrength: strength,
+    showBackground: true,
+    backgroundMode: config.backgroundMode,
+    backgroundStrength: config.backgroundIntensity,
     weekdayMode: config.weekdayMode,
   };
 }
@@ -223,9 +221,44 @@ function mapClockMode(config: SpiritClockConfig): Pick<
   }
 }
 
+function migrateBackgroundIntensity(parsed: Record<string, unknown>): number {
+  if (typeof parsed.backgroundIntensity === "number") {
+    return Math.max(0, Math.min(1, parsed.backgroundIntensity));
+  }
+
+  if (parsed.dayAtmosphereMode === "mood") return 0.55;
+  if (parsed.dayAtmosphereMode === "off") return 0;
+  if (parsed.dayAtmosphereMode === "solar") return 0.75;
+
+  return DEFAULT_SPIRIT_CLOCK_CONFIG.backgroundIntensity;
+}
+
+function migrateConfigFields(
+  parsed: Partial<SpiritClockConfig> & Record<string, unknown>
+): Pick<SpiritClockConfig, "backgroundMode" | "backgroundIntensity" | "weekdayMode"> {
+  const weekdayMode = migrateWeekdayMode(parsed.weekdayMode);
+
+  let backgroundMode: BackgroundLayerMode;
+  if (parsed.backgroundMode !== undefined) {
+    backgroundMode = migrateBackgroundMode(parsed.backgroundMode);
+  } else if (parsed.dayAtmosphereMode === "off" || weekdayMode === "off") {
+    backgroundMode = "off";
+  } else if (parsed.dayAtmosphereBehavior !== undefined) {
+    backgroundMode = migrateBackgroundMode(parsed.dayAtmosphereBehavior);
+  } else {
+    backgroundMode = DEFAULT_SPIRIT_CLOCK_CONFIG.backgroundMode;
+  }
+
+  return {
+    weekdayMode,
+    backgroundMode,
+    backgroundIntensity: migrateBackgroundIntensity(parsed),
+  };
+}
+
 export function configToFlowerProps(config: SpiritClockConfig): FlowerClockProps {
   const clockMode = mapClockMode(config);
-  const dayAtmosphere = mapDayAtmosphere(config);
+  const background = mapBackground(config);
   const glow = mapGlowIntensity(config.glowIntensity);
   const performanceMode = mapPerformanceMode(config.performanceMode);
 
@@ -237,7 +270,7 @@ export function configToFlowerProps(config: SpiritClockConfig): FlowerClockProps
   return {
     ...DEFAULT_CLOCK_CONFIG,
     ...clockMode,
-    ...dayAtmosphere,
+    ...background,
     ...glow,
     paletteMode: mapPaletteMode(config.paletteMode),
     fixedPaletteIndex: config.fixedPaletteIndex,
@@ -274,13 +307,12 @@ export function clockSizeClass(size: ClockSize): string {
 
 export function parseSpiritClockConfig(json: string): SpiritClockConfig | null {
   try {
-    const parsed = JSON.parse(json) as Partial<SpiritClockConfig> & {
-      weekdayMode?: unknown;
-    };
+    const parsed = JSON.parse(json) as Partial<SpiritClockConfig> & Record<string, unknown>;
+    const migrated = migrateConfigFields(parsed);
     return {
       ...DEFAULT_SPIRIT_CLOCK_CONFIG,
       ...parsed,
-      weekdayMode: migrateWeekdayMode(parsed.weekdayMode),
+      ...migrated,
     };
   } catch {
     return null;

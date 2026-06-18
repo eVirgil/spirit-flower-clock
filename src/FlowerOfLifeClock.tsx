@@ -15,8 +15,8 @@
  * - Optional minute ticks: sixty outer tick marks, lit by elapsed cycle progress.
  * - Hour/day phase: palette selection can follow a simple cycle, the current hour,
  *   or broad day phases such as night, dawn, day, sunset, and evening.
- * - Weekday: subtle background atmosphere can change star rhythm, sky tint, and
- *   aura breathing without changing the core Flower geometry.
+ * - Weekday background: stars, aura, motion, glow, and gradient behind the Flower
+ *   without changing core Flower geometry.
  *
  * Performance strategy
  * --------------------
@@ -41,12 +41,23 @@
  *   mode="wall-clock"
  *   paletteMode="dayPhase"
  *   performanceMode="balanced"
- *   showDayAtmosphere
+ *   showBackground
  * />
  * ```
  */
 import { motion, useReducedMotion } from "framer-motion";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  getAuraShapeTransform,
+  getBackgroundThemeByIndex,
+  hasBackgroundAura,
+  hasBackgroundGlow,
+  hasBackgroundGradient,
+  hasBackgroundMotion,
+  hasBackgroundStars,
+  type BackgroundLayerMode,
+  type BackgroundTheme,
+} from "./backgroundThemes";
 import { resolveWeekdayIndex, type WeekdayMode } from "./weekdayMode";
 
 const SQRT3 = Math.sqrt(3);
@@ -74,14 +85,15 @@ export type ForcePhase = "auto" | "circle" | "seed" | "flower" | "glow";
 export type ReducedMotionOverride = "system" | "on" | "off";
 export type { WeekdayMode };
 /**
- * Weekday background behavior mode.
+ * Background layer mode — which ambient channels are active behind the Flower.
  *
- * - `rhythm`: star twinkle timing + aura breathing.
- * - `weather`: rhythm plus directional star drift.
- * - `aura`: aura and sky tint only.
- * - `full`: all weekday atmosphere effects.
+ * - `off`: disabled.
+ * - `aura`: aura shape, intensity, and gradient.
+ * - `stars`: star density, brightness, and twinkle.
+ * - `motion`: star behavior, drift direction, and motion rhythm.
+ * - `full`: aura, stars, motion, glow, and gradient together.
  */
-type DayAtmosphereMode = "rhythm" | "weather" | "aura" | "full";
+export type { BackgroundLayerMode };
 /**
  * Built-in performance presets.
  *
@@ -171,22 +183,6 @@ type Star = {
   drift: number;
 };
 
-type WeekdayAtmosphere = {
-  name: string;
-  tint: string;
-  tintOpacity: number;
-  auraDuration: number;
-  auraScale: number;
-  auraOpacityBoost: number;
-  starDurationMul: number;
-  starScalePeak: number;
-  starOpacityLow: number;
-  starOpacityHigh: number;
-  starDriftMul: number;
-  starDriftAngle: number;
-  starStaggerMul: number;
-};
-
 /**
  * Public props for {@link FlowerOfLifeClock}.
  *
@@ -194,7 +190,7 @@ type WeekdayAtmosphere = {
  *
  * 1. Geometry/layout: `r`, `rotateDeg`, `clipMul`, `boundaryOffset`, `className`.
  * 2. Time/color: `mode`, `cycleMs`, `tickMs`, `paletteMode`, `paletteTransitionMs`.
- * 3. Visual layers: draw head, ticks, intersections, starfield, and weekday atmosphere.
+   * 3. Visual layers: draw head, ticks, intersections, starfield, and background mood.
  * 4. Performance/event hooks: animation caps, heavy-effect toggles, pause behavior,
  *    and callback hooks for audio or external state.
  *
@@ -334,34 +330,32 @@ export type FlowerClockProps = {
    */
   starCount?: number;
   /**
-   * Enables subtle weekday identity in the background only.
+   * Enables weekday background mood behind the Flower.
    *
-   * This never changes the Flower geometry. It affects star rhythm, aura breathing,
-   * directional drift, and faint sky tint depending on `dayAtmosphereMode`.
+   * This never changes the Flower geometry. It affects stars, aura, motion, glow,
+   * and gradient depending on `backgroundMode`.
    */
-  showDayAtmosphere?: boolean;
+  showBackground?: boolean;
   /**
-   * Selects which weekday atmosphere channels are active.
+   * Selects which background layers are active.
    *
-   * - `rhythm`: star twinkle cadence and aura breathing.
-   * - `weather`: rhythm plus directional star drift.
-   * - `aura`: sky tint/aura only.
-   * - `full`: all channels.
-   *
-   * Default: `"rhythm"` for a restrained background.
+   * - `off`: disabled.
+   * - `aura`: aura shape, intensity, and gradient.
+   * - `stars`: star density, brightness, and twinkle.
+   * - `motion`: star behavior, drift direction, and motion rhythm.
+   * - `full`: aura, stars, motion, glow, and gradient together.
    */
-  dayAtmosphereMode?: DayAtmosphereMode;
+  backgroundMode?: BackgroundLayerMode;
   /**
-   * Strength of weekday atmosphere blending.
+   * Strength of background theme blending.
    *
-   * Range: `0..1`. Values outside the range are clamped. Use `0.5..0.8` if the
-   * background starts competing with the Flower.
+   * Range: `0..1`. Values outside the range are clamped.
    */
-  dayAtmosphereStrength?: number;
+  backgroundStrength?: number;
   /**
-   * Selects weekday identity for atmosphere and weekday palette mode.
+   * Selects weekday identity for background theme and weekday palette mode.
    *
-   * - `off`: no weekday identity (atmosphere disabled via config; palette falls back to cycle).
+   * - `off`: no weekday identity (background disabled via config; palette falls back to cycle).
    * - `cycle-day`: real local weekday from `Date`.
    * - `cycle-minute`: advances each redraw cycle (`cycleIndex % 7`).
    * - `cycle-seven-minutes`: advances every full palette cycle.
@@ -604,114 +598,6 @@ const DAY_PHASES: { startHour: number; paletteIndex: number }[] = [
   { startHour: 22, paletteIndex: 0 }, // late night: Rose Bloom
 ];
 
-const WEEKDAY_ATMOSPHERES: WeekdayAtmosphere[] = [
-  {
-    name: "Sunday",
-    tint: "#ffd740",
-    tintOpacity: 0.045,
-    auraDuration: 5.2,
-    auraScale: 1.06,
-    auraOpacityBoost: 0.16,
-    starDurationMul: 1.12,
-    starScalePeak: 1.32,
-    starOpacityLow: 0.32,
-    starOpacityHigh: 1.08,
-    starDriftMul: 0.78,
-    starDriftAngle: -Math.PI / 2,
-    starStaggerMul: 1.0,
-  },
-  {
-    name: "Monday",
-    tint: "#8c9eff",
-    tintOpacity: 0.04,
-    auraDuration: 6.8,
-    auraScale: 1.035,
-    auraOpacityBoost: 0.1,
-    starDurationMul: 1.42,
-    starScalePeak: 1.16,
-    starOpacityLow: 0.4,
-    starOpacityHigh: 0.92,
-    starDriftMul: 0.56,
-    starDriftAngle: -Math.PI * 0.72,
-    starStaggerMul: 1.35,
-  },
-  {
-    name: "Tuesday",
-    tint: "#ff80ab",
-    tintOpacity: 0.038,
-    auraDuration: 3.1,
-    auraScale: 1.075,
-    auraOpacityBoost: 0.18,
-    starDurationMul: 0.68,
-    starScalePeak: 1.44,
-    starOpacityLow: 0.22,
-    starOpacityHigh: 1.18,
-    starDriftMul: 1.22,
-    starDriftAngle: -Math.PI * 0.36,
-    starStaggerMul: 0.62,
-  },
-  {
-    name: "Wednesday",
-    tint: "#00e5ff",
-    tintOpacity: 0.038,
-    auraDuration: 4.4,
-    auraScale: 1.045,
-    auraOpacityBoost: 0.12,
-    starDurationMul: 0.92,
-    starScalePeak: 1.24,
-    starOpacityLow: 0.3,
-    starOpacityHigh: 1.0,
-    starDriftMul: 0.92,
-    starDriftAngle: -Math.PI * 0.25,
-    starStaggerMul: 0.86,
-  },
-  {
-    name: "Thursday",
-    tint: "#536dfe",
-    tintOpacity: 0.046,
-    auraDuration: 6.1,
-    auraScale: 1.06,
-    auraOpacityBoost: 0.17,
-    starDurationMul: 1.2,
-    starScalePeak: 1.28,
-    starOpacityLow: 0.28,
-    starOpacityHigh: 1.06,
-    starDriftMul: 0.82,
-    starDriftAngle: Math.PI / 2,
-    starStaggerMul: 1.1,
-  },
-  {
-    name: "Friday",
-    tint: "#b44fff",
-    tintOpacity: 0.048,
-    auraDuration: 3.5,
-    auraScale: 1.09,
-    auraOpacityBoost: 0.2,
-    starDurationMul: 0.74,
-    starScalePeak: 1.5,
-    starOpacityLow: 0.22,
-    starOpacityHigh: 1.22,
-    starDriftMul: 1.08,
-    starDriftAngle: -Math.PI * 0.82,
-    starStaggerMul: 0.58,
-  },
-  {
-    name: "Saturday",
-    tint: "#00e676",
-    tintOpacity: 0.04,
-    auraDuration: 7.4,
-    auraScale: 1.04,
-    auraOpacityBoost: 0.11,
-    starDurationMul: 1.55,
-    starScalePeak: 1.18,
-    starOpacityLow: 0.36,
-    starOpacityHigh: 0.96,
-    starDriftMul: 0.48,
-    starDriftAngle: Math.PI * 0.82,
-    starStaggerMul: 1.55,
-  },
-];
-
 type PerformanceConfig = {
   defaultTickMs: number;
   defaultStarCount: number;
@@ -859,29 +745,13 @@ function blendNumber(base: number, atmospheric: number, strength: number) {
   return lerp(base, atmospheric, clamp01(strength));
 }
 
-function hasDayRhythm(mode: DayAtmosphereMode) {
-  return mode === "rhythm" || mode === "weather" || mode === "full";
-}
-
-function hasDayWeather(mode: DayAtmosphereMode) {
-  return mode === "weather" || mode === "full";
-}
-
-function hasDayAura(mode: DayAtmosphereMode) {
-  return mode === "rhythm" || mode === "aura" || mode === "weather" || mode === "full";
-}
-
-function getWeekdayAtmosphereByIndex(index: number) {
-  return WEEKDAY_ATMOSPHERES[((index % 7) + 7) % 7] ?? WEEKDAY_ATMOSPHERES[0];
-}
-
-function getWeekdayAtmosphere(
+function getBackgroundTheme(
   now: number,
   date: Date,
   weekdayMode: WeekdayMode,
   cycleIndex: number,
   fixedWeekdayIndex = 0
-) {
+): BackgroundTheme {
   const index = resolveWeekdayIndex({
     now,
     date,
@@ -891,7 +761,7 @@ function getWeekdayAtmosphere(
     paletteCount: palettes.length,
   });
 
-  return getWeekdayAtmosphereByIndex(index ?? 0);
+  return getBackgroundThemeByIndex(index ?? 0);
 }
 
 /**
@@ -1374,16 +1244,24 @@ function makeIntersectionNodes(pieces: Piece[], clipRadius: number): Intersectio
  * The result is stable for a given count/size, avoiding random layout changes on
  * every render. Only a capped subset becomes animated depending on performance.
  */
-function makeStarfield(count: number, half: number): Star[] {
+function makeStarfield(
+  count: number,
+  half: number,
+  starTheme?: BackgroundTheme["stars"]
+): Star[] {
+  const sizeMin = starTheme?.sizeMin ?? 0.45;
+  const sizeMax = starTheme?.sizeMax ?? 1.7;
+
   return Array.from({ length: count }, (_, i) => {
     const angle = seededRandom(i + 1) * Math.PI * 2;
     const radius = Math.sqrt(seededRandom(i + 101)) * half * 1.04;
+    const sizeT = seededRandom(i + 201);
 
     return {
       id: `star-${i}`,
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
-      r: 0.45 + seededRandom(i + 201) * 1.25,
+      r: sizeMin + sizeT * (sizeMax - sizeMin),
       opacity: 0.12 + seededRandom(i + 301) * 0.42,
       delay: seededRandom(i + 401) * 4,
       duration: 3.5 + seededRandom(i + 501) * 5.5,
@@ -1596,9 +1474,9 @@ const ClockPiece = memo(function ClockPiece({
  *
  * Rendering order
  * ---------------
- * 1. Optional weekday sky tint.
+ * 1. Optional background gradient and sky tint.
  * 2. Star/dust field, with capped animation count.
- * 3. Central aura, optionally breathing by weekday.
+ * 3. Central aura, optionally breathing by weekday background theme.
  * 4. Optional outer minute ticks.
  * 5. Flower of Life reveal geometry.
  * 6. Intersection nodes after contributing circles complete.
@@ -1636,9 +1514,9 @@ export default function FlowerOfLifeClock({
   showIntersectionNodes = true,
   showStarfield = true,
   starCount,
-  showDayAtmosphere = true,
-  dayAtmosphereMode = "rhythm",
-  dayAtmosphereStrength = 1,
+  showBackground = true,
+  backgroundMode = "motion",
+  backgroundStrength = 1,
   weekdayMode = "cycle-day",
   fixedWeekdayIndex = 0,
   showWeekdayInStatus = false,
@@ -1669,14 +1547,7 @@ export default function FlowerOfLifeClock({
   const safeTickMs = Math.max(16, tickMs ?? performanceConfig.defaultTickMs);
   const now = useNow(safeTickMs, pauseWhenHidden);
 
-  const effectiveStarCount = Math.max(0, Math.min(140, starCount ?? performanceConfig.defaultStarCount));
-  const effectiveAnimatedStarLimit = Math.max(
-    0,
-    Math.min(
-      effectiveStarCount,
-      reducedMotion ? 0 : (animatedStarLimit ?? performanceConfig.animatedStarLimit)
-    )
-  );
+  const baseStarCount = Math.max(0, Math.min(140, starCount ?? performanceConfig.defaultStarCount));
   const effectiveAnimatedIntersectionNodeLimit = Math.max(
     0,
     reducedMotion ? 0 : (animatedIntersectionNodeLimit ?? performanceConfig.animatedIntersectionNodeLimit)
@@ -1696,10 +1567,13 @@ export default function FlowerOfLifeClock({
   const effectiveCycleMs = mode === "wall-clock" ? MINUTE_MS : safeCycleMs;
 
   const date = useMemo(() => new Date(now), [now]);
-  const dayStrength = showDayAtmosphere ? clamp01(dayAtmosphereStrength) : 0;
-  const dayRhythmEnabled = dayStrength > 0 && hasDayRhythm(dayAtmosphereMode) && !reducedMotion;
-  const dayWeatherEnabled = dayStrength > 0 && hasDayWeather(dayAtmosphereMode) && !reducedMotion;
-  const dayAuraEnabled = dayStrength > 0 && hasDayAura(dayAtmosphereMode);
+  const bgStrength =
+    showBackground && backgroundMode !== "off" ? clamp01(backgroundStrength) : 0;
+  const bgStarsEnabled = bgStrength > 0 && hasBackgroundStars(backgroundMode) && !reducedMotion;
+  const bgMotionEnabled = bgStrength > 0 && hasBackgroundMotion(backgroundMode) && !reducedMotion;
+  const bgAuraEnabled = bgStrength > 0 && hasBackgroundAura(backgroundMode);
+  const bgGradientEnabled = bgStrength > 0 && hasBackgroundGradient(backgroundMode);
+  const bgGlowEnabled = bgStrength > 0 && hasBackgroundGlow(backgroundMode);
   const clipRadius = clipMul * r;
   const outerBoundary = clipRadius + boundaryOffset;
   const tickRadius = outerBoundary + 16;
@@ -1729,9 +1603,25 @@ export default function FlowerOfLifeClock({
     date.getSeconds() * 1000 + date.getMilliseconds();
   const cycleIndex =
     mode === "wall-clock" ? Math.floor(now / MINUTE_MS) : Math.floor(now / effectiveCycleMs);
-  const weekdayAtmosphere = useMemo(
-    () => getWeekdayAtmosphere(now, date, weekdayMode, cycleIndex, fixedWeekdayIndex),
+  const backgroundTheme = useMemo(
+    () => getBackgroundTheme(now, date, weekdayMode, cycleIndex, fixedWeekdayIndex),
     [now, date, weekdayMode, cycleIndex, fixedWeekdayIndex]
+  );
+
+  const themedStarCount = useMemo(() => {
+    const density =
+      bgStrength > 0
+        ? blendNumber(1, backgroundTheme.stars.density, bgStrength)
+        : 1;
+    return Math.max(0, Math.min(140, Math.round(baseStarCount * density)));
+  }, [baseStarCount, bgStrength, backgroundTheme.stars.density]);
+
+  const effectiveAnimatedStarLimit = Math.max(
+    0,
+    Math.min(
+      themedStarCount,
+      reducedMotion ? 0 : (animatedStarLimit ?? performanceConfig.animatedStarLimit)
+    )
   );
   const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
@@ -1890,8 +1780,13 @@ export default function FlowerOfLifeClock({
   );
 
   const stars = useMemo(
-    () => makeStarfield(effectiveStarCount, half),
-    [effectiveStarCount, half]
+    () =>
+      makeStarfield(
+        themedStarCount,
+        half,
+        bgStrength > 0 ? backgroundTheme.stars : undefined
+      ),
+    [themedStarCount, half, bgStrength, backgroundTheme.stars]
   );
 
   // Memoize geometry groups to prevent unnecessary re-renders.
@@ -1949,13 +1844,33 @@ export default function FlowerOfLifeClock({
   );
 
   const baseAuraOpacity = (0.35 + glowOpacity * 0.65) * clamp01(auraOpacityMul);
-  const dayTintOpacity = dayStrength * weekdayAtmosphere.tintOpacity;
-  const dayAuraOpacityBoost = dayAuraEnabled
-    ? dayStrength * weekdayAtmosphere.auraOpacityBoost
+  const gradientOpacity =
+    bgGradientEnabled ? bgStrength * backgroundTheme.gradient.opacity : 0;
+  const vignetteOpacity =
+    bgGradientEnabled ? bgStrength * backgroundTheme.gradient.vignetteStrength * 0.55 : 0;
+  const radialCenterOpacity =
+    bgGradientEnabled
+      ? bgStrength * backgroundTheme.gradient.radialStrength * 0.35
+      : 0;
+  const dayTintOpacity = gradientOpacity;
+  const dayAuraOpacityBoost = bgAuraEnabled
+    ? bgStrength * backgroundTheme.aura.intensity * 0.28
     : 0;
-  const dayAuraScale = dayAuraEnabled
-    ? blendNumber(1, weekdayAtmosphere.auraScale, dayStrength)
+  const dayAuraScale = bgAuraEnabled
+    ? blendNumber(1, backgroundTheme.aura.scale, bgStrength)
     : 1;
+  const auraBreathDuration = bgAuraEnabled
+    ? Math.max(2.2, 5.5 / Math.max(0.2, backgroundTheme.aura.breathSpeed))
+    : 5;
+  const auraBreathDepth = bgAuraEnabled ? backgroundTheme.aura.breathDepth : 0;
+  const auraShape = getAuraShapeTransform(backgroundTheme.aura.shape);
+  const envGlowBase = bgGlowEnabled
+    ? bgStrength * backgroundTheme.glow.intensity * 0.14
+    : 0;
+  const envGlowPulseDuration = bgGlowEnabled
+    ? Math.max(2, 4.5 / Math.max(0.2, backgroundTheme.glow.pulseSpeed))
+    : 4;
+  const envGlowPulseDepth = bgGlowEnabled ? backgroundTheme.glow.pulseDepth : 0;
 
   // Memoize clipped and unclipped pieces for glow effect.
   const { clippedGlowPieces, unclippedGlowPieces } = useMemo(
@@ -2077,7 +1992,47 @@ export default function FlowerOfLifeClock({
             <stop offset="50%" stopColor={palette.glow} stopOpacity="0.3" />
             <stop offset="100%" stopColor={palette.glow} stopOpacity="0" />
           </linearGradient>
+
+          <radialGradient id="backgroundThemeRadial" cx="50%" cy="50%" r="55%">
+            <stop
+              offset="0%"
+              stopColor={mixHex(palette.soft, backgroundTheme.tint, 0.45)}
+              stopOpacity={radialCenterOpacity}
+            />
+            <stop
+              offset="62%"
+              stopColor={backgroundTheme.tint}
+              stopOpacity={gradientOpacity * 0.5}
+            />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+          </radialGradient>
+
+          <radialGradient id="backgroundVignette" cx="50%" cy="50%" r="78%">
+            <stop offset="52%" stopColor="#000000" stopOpacity="0" />
+            <stop offset="100%" stopColor="#000000" stopOpacity={vignetteOpacity} />
+          </radialGradient>
         </defs>
+
+        {bgGradientEnabled ? (
+          <>
+            <rect
+              x={-half}
+              y={-half}
+              width={half * 2}
+              height={half * 2}
+              fill="url(#backgroundThemeRadial)"
+              style={{ pointerEvents: "none" }}
+            />
+            <rect
+              x={-half}
+              y={-half}
+              width={half * 2}
+              height={half * 2}
+              fill="url(#backgroundVignette)"
+              style={{ pointerEvents: "none" }}
+            />
+          </>
+        ) : null}
 
         {dayTintOpacity > 0 ? (
           <motion.rect
@@ -2085,17 +2040,23 @@ export default function FlowerOfLifeClock({
             y={-half}
             width={half * 2}
             height={half * 2}
-            fill={weekdayAtmosphere.tint}
-            opacity={dayTintOpacity}
+            fill={backgroundTheme.tint}
+            opacity={dayTintOpacity * 0.55}
             animate={
-              dayAuraEnabled
-                ? { opacity: [dayTintOpacity * 0.65, dayTintOpacity, dayTintOpacity * 0.72] }
+              bgAuraEnabled
+                ? {
+                    opacity: [
+                      dayTintOpacity * 0.38,
+                      dayTintOpacity * 0.62,
+                      dayTintOpacity * 0.42,
+                    ],
+                  }
                 : undefined
             }
             transition={
-              dayAuraEnabled
+              bgAuraEnabled
                 ? {
-                    duration: weekdayAtmosphere.auraDuration,
+                    duration: auraBreathDuration,
                     repeat: Infinity,
                     ease: "easeInOut",
                   }
@@ -2105,34 +2066,70 @@ export default function FlowerOfLifeClock({
           />
         ) : null}
 
+        {envGlowBase > 0 ? (
+          <motion.circle
+            cx={0}
+            cy={0}
+            r={outerBoundary + 36}
+            fill={backgroundTheme.tint}
+            opacity={envGlowBase}
+            filter="url(#flowerClockGlowSoft)"
+            animate={{
+              opacity: [
+                envGlowBase * (1 - envGlowPulseDepth * 0.35),
+                envGlowBase * (1 + envGlowPulseDepth),
+                envGlowBase * (1 - envGlowPulseDepth * 0.2),
+              ],
+              scale: [0.96, 1.06, 0.98],
+            }}
+            transition={{
+              duration: envGlowPulseDuration,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+            style={{ transformOrigin: "0px 0px", pointerEvents: "none" }}
+          />
+        ) : null}
+
         {showStarfield ? (
-          <g opacity={0.9}>
+          <g opacity={0.92}>
             {stars.map((star, index) => {
-              const duration = dayRhythmEnabled
-                ? star.duration * blendNumber(1, weekdayAtmosphere.starDurationMul, dayStrength)
-                : star.duration;
-              const highOpacity = dayRhythmEnabled
-                ? Math.min(0.82, star.opacity * blendNumber(1, weekdayAtmosphere.starOpacityHigh, dayStrength))
+              const twinkleSpeed = backgroundTheme.stars.twinkleSpeed;
+              const duration = bgStarsEnabled ? star.duration / twinkleSpeed : star.duration;
+              const highOpacity = bgStarsEnabled
+                ? Math.min(
+                    0.95,
+                    star.opacity * blendNumber(1, backgroundTheme.stars.opacityHigh, bgStrength)
+                  )
                 : star.opacity;
-              const lowOpacity = dayRhythmEnabled
-                ? star.opacity * blendNumber(0.35, weekdayAtmosphere.starOpacityLow, dayStrength)
+              const lowOpacity = bgStarsEnabled
+                ? star.opacity * blendNumber(0.35, backgroundTheme.stars.opacityLow, bgStrength)
                 : star.opacity * 0.35;
-              const peakScale = dayRhythmEnabled
-                ? blendNumber(1.25, weekdayAtmosphere.starScalePeak, dayStrength)
+              const peakScale = bgStarsEnabled
+                ? blendNumber(1.15, 1.15 + backgroundTheme.stars.twinkleSharpness * 0.65, bgStrength)
                 : 1.25;
-              const driftMul = dayWeatherEnabled
-                ? blendNumber(1, weekdayAtmosphere.starDriftMul, dayStrength)
-                : 1;
-              const driftAngle = dayWeatherEnabled ? weekdayAtmosphere.starDriftAngle : -Math.PI / 2;
-              const driftX = Math.cos(driftAngle) * star.drift * driftMul;
-              const driftY = Math.sin(driftAngle) * star.drift * driftMul;
-              const delay = dayRhythmEnabled
-                ? star.delay * blendNumber(1, weekdayAtmosphere.starStaggerMul, dayStrength) +
-                  (index % 7) * 0.035 * dayStrength
+              const sharpness = bgStarsEnabled ? backgroundTheme.stars.twinkleSharpness : 0.45;
+              const peakTime = Math.max(0.12, 0.48 - sharpness * 0.3);
+              const driftAngle = bgMotionEnabled
+                ? (backgroundTheme.motion.directionDeg * Math.PI) / 180
+                : -Math.PI / 2;
+              const driftDist = bgMotionEnabled
+                ? star.drift *
+                  backgroundTheme.motion.driftDistance *
+                  backgroundTheme.motion.driftSpeed
+                : star.drift * 0.25;
+              const turb = bgMotionEnabled
+                ? (seededRandom(index + 17) - 0.5) * backgroundTheme.motion.turbulence * star.drift
+                : 0;
+              const driftX = Math.cos(driftAngle) * driftDist + turb;
+              const driftY = Math.sin(driftAngle) * driftDist + turb * 0.55;
+              const delay = bgStarsEnabled
+                ? star.delay * blendNumber(1, backgroundTheme.motion.stagger, bgStrength) +
+                  (index % 7) * 0.045 * bgStrength
                 : star.delay;
 
-              const starFill = dayRhythmEnabled
-                ? mixHex(palette.soft, weekdayAtmosphere.tint, dayStrength * 0.28)
+              const starFill = bgStarsEnabled
+                ? mixHex(palette.soft, backgroundTheme.tint, bgStrength * 0.32)
                 : palette.soft;
 
               if (index >= effectiveAnimatedStarLimit) {
@@ -2158,7 +2155,7 @@ export default function FlowerOfLifeClock({
                   opacity={star.opacity}
                   animate={{
                     opacity: [lowOpacity, highOpacity, lowOpacity],
-                    scale: [0.8, peakScale, 0.84],
+                    scale: [0.78, peakScale, 0.82],
                     x: [0, driftX, 0],
                     y: [0, driftY, 0],
                   }}
@@ -2166,7 +2163,8 @@ export default function FlowerOfLifeClock({
                     duration,
                     delay,
                     repeat: Infinity,
-                    ease: "easeInOut",
+                    ease: sharpness > 0.62 ? "linear" : "easeInOut",
+                    times: [0, peakTime, 1],
                   }}
                   style={{ transformOrigin: `${star.x}px ${star.y}px` }}
                 />
@@ -2175,7 +2173,7 @@ export default function FlowerOfLifeClock({
           </g>
         ) : null}
 
-        {/* Background aura grows subtly during the final glow step and breathes by weekday. */}
+        {/* Background aura grows subtly during the final glow step and breathes by weekday theme. */}
         <motion.circle
           cx={0}
           cy={0}
@@ -2183,21 +2181,31 @@ export default function FlowerOfLifeClock({
           fill="url(#flowerClockAura)"
           opacity={baseAuraOpacity + dayAuraOpacityBoost * 0.5}
           animate={
-            dayAuraEnabled
+            bgAuraEnabled
               ? {
                   opacity: [
                     baseAuraOpacity,
-                    Math.min(1, baseAuraOpacity + dayAuraOpacityBoost),
-                    baseAuraOpacity + dayAuraOpacityBoost * 0.38,
+                    Math.min(1, baseAuraOpacity + dayAuraOpacityBoost + auraBreathDepth * bgStrength),
+                    baseAuraOpacity + dayAuraOpacityBoost * 0.4,
                   ],
-                  scale: [1, dayAuraScale, 1],
+                  scaleX: [
+                    auraShape.scaleX,
+                    auraShape.scaleX * dayAuraScale,
+                    auraShape.scaleX,
+                  ],
+                  scaleY: [
+                    auraShape.scaleY,
+                    auraShape.scaleY * dayAuraScale,
+                    auraShape.scaleY,
+                  ],
+                  rotate: auraShape.rotate,
                 }
               : undefined
           }
           transition={
-            dayAuraEnabled
+            bgAuraEnabled
               ? {
-                  duration: weekdayAtmosphere.auraDuration,
+                  duration: auraBreathDuration,
                   repeat: Infinity,
                   ease: "easeInOut",
                 }
@@ -2660,10 +2668,10 @@ export default function FlowerOfLifeClock({
           <div style={{ color: palette.line, fontSize: 11, marginTop: 6 }}>
             {mode === "wall-clock"
               ? `${timeShort} · ${Math.floor(cycleElapsed / 1000)}s / 60s · ${palette.name}${
-                  showWeekdayInStatus ? ` · ${weekdayAtmosphere.name}` : ""
+                  showWeekdayInStatus ? ` · ${backgroundTheme.name}` : ""
                 }`
               : `Cycle ${cycleIndex + 1} · ${palette.name}${
-                  showWeekdayInStatus ? ` · ${weekdayAtmosphere.name}` : ""
+                  showWeekdayInStatus ? ` · ${backgroundTheme.name}` : ""
                 }`}
           </div>
         </div>
@@ -2687,9 +2695,9 @@ export const DEFAULT_CLOCK_CONFIG = {
   showIntersectionNodes: true,
 
   showStarfield: true,
-  showDayAtmosphere: true,
-  dayAtmosphereMode: "weather",
-  dayAtmosphereStrength: 0.75,
+  showBackground: true,
+  backgroundMode: "full",
+  backgroundStrength: 0.75,
   weekdayMode: "cycle-day",
   showWeekdayInStatus: false,
 
@@ -2712,9 +2720,9 @@ export const DEMO_CLOCK_CONFIG = {
   showIntersectionNodes: true,
 
   showStarfield: true,
-  showDayAtmosphere: true,
-  dayAtmosphereMode: "full",
-  dayAtmosphereStrength: 1,
+  showBackground: true,
+  backgroundMode: "full",
+  backgroundStrength: 1,
   weekdayMode: "cycle-minute",
   showWeekdayInStatus: true,
 

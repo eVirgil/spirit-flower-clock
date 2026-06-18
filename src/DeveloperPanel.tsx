@@ -12,8 +12,7 @@ import {
   parseSpiritClockConfig,
   type ClockMode,
   type ClockSize,
-  type DayAtmosphereMode,
-  type DayAtmosphereBehavior,
+  type BackgroundMode,
   type ForcePhase,
   type GlowIntensity,
   type PaletteMode,
@@ -25,7 +24,7 @@ import {
   type SponsorVisibility,
   type WeekdayMode,
 } from "./spiritClockConfig";
-import { WEEKDAY_NAMES, wrapWeekdayIndex } from "./weekdayMode";
+import { formatWeekdayIndex, wrapWeekdayIndex } from "./weekdayMode";
 
 type DeveloperPanelProps = {
   open: boolean;
@@ -186,6 +185,7 @@ const SliderControl = memo(function SliderControl({
   max,
   step,
   onChange,
+  hint,
 }: {
   label: string;
   value: number;
@@ -193,6 +193,7 @@ const SliderControl = memo(function SliderControl({
   max: number;
   step: number;
   onChange: (value: number) => void;
+  hint?: string;
 }) {
   const inputId = useId();
 
@@ -202,6 +203,7 @@ const SliderControl = memo(function SliderControl({
         {label}
         <span className="dev-value">{value}</span>
       </label>
+      {hint ? <span className="dev-hint">{hint}</span> : null}
       <input
         id={inputId}
         className="dev-range"
@@ -320,76 +322,63 @@ const WEEKDAY_MODE_OPTIONS: Option<WeekdayMode>[] = [
     value: "off",
     label: "Off",
     description:
-      "Disables weekday-based atmosphere and weekday-based palette selection.",
+      "Disables weekday-based background theme and weekday-based palette selection.",
   },
   {
     value: "cycle-day",
     label: "Cycle Every Day",
     description:
-      "Uses the real local weekday. Each day of the week has its own atmosphere/palette identity.",
+      "Uses the real local weekday. Each day selects its own Background Theme.",
   },
   {
     value: "cycle-minute",
     label: "Cycle Every Minute",
     description:
-      "Advances the weekday identity every redraw cycle, matching the normal minute-by-minute palette cycle.",
+      "Advances the Background Theme every redraw cycle, matching the normal minute-by-minute palette cycle.",
   },
   {
     value: "cycle-seven-minutes",
     label: "Cycle Every 7 Minutes",
-    description: "Advances the weekday identity after each full seven-palette cycle.",
+    description: "Advances the Background Theme after each full seven-palette cycle.",
   },
   {
     value: "cycle-hour",
     label: "Cycle Every Hour",
-    description: "Advances the weekday identity once per hour.",
+    description: "Advances the Background Theme once per hour.",
   },
   {
     value: "fixed",
     label: "Fixed Day",
     description:
-      "Locks the weekday identity to a selected day index for previewing or screenshots.",
+      "Locks the Background Theme to a selected day index for previewing or screenshots.",
   },
 ];
 
-const DAY_ATMOSPHERE_OPTIONS: Option<DayAtmosphereMode>[] = [
+const BACKGROUND_MODE_OPTIONS: Option<BackgroundMode>[] = [
   {
     value: "off",
     label: "Off",
-    description: "No weekday atmosphere blending.",
-  },
-  {
-    value: "solar",
-    label: "Solar Day Cycle",
-    description: "Full weekday atmosphere driven by solar day cycle.",
-  },
-  {
-    value: "mood",
-    label: "Ambient Mood",
-    description: "Softer atmosphere blend for ambient display.",
-  },
-];
-
-const DAY_ATMOSPHERE_BEHAVIOR_OPTIONS: Option<DayAtmosphereBehavior>[] = [
-  {
-    value: "rhythm",
-    label: "Rhythm",
-    description: "Star twinkle timing and aura breathing.",
-  },
-  {
-    value: "weather",
-    label: "Weather",
-    description: "Rhythm plus directional star drift.",
+    description: "Disables background mood effects.",
   },
   {
     value: "aura",
-    label: "Aura",
-    description: "Sky tint and aura only.",
+    label: "Aura Only",
+    description: "Uses aura shape, intensity, and gradient only.",
+  },
+  {
+    value: "stars",
+    label: "Stars Only",
+    description: "Uses star density, brightness, and twinkle only.",
+  },
+  {
+    value: "motion",
+    label: "Motion + Stars",
+    description: "Uses star behavior, drift direction, and motion rhythm.",
   },
   {
     value: "full",
-    label: "Full",
-    description: "All weekday atmosphere effects.",
+    label: "Full Background",
+    description: "Uses aura, stars, motion, glow, and gradient together.",
   },
 ];
 
@@ -485,7 +474,52 @@ const CommonControls = memo(function CommonControls({
   onPatch: (partial: Partial<SpiritClockConfig>) => void;
 }) {
   return (
-    <Section title="Common">
+    <>
+      <Section title="Background">
+        <p className="dev-hint">
+          Controls the ambient background mood behind the Flower: stars, aura, motion, glow,
+          and gradient. Does not change the Flower geometry.
+        </p>
+
+        <SelectControl
+          label="Background Mode"
+          value={config.backgroundMode}
+          options={BACKGROUND_MODE_OPTIONS}
+          onChange={(backgroundMode: BackgroundMode) => onPatch({ backgroundMode })}
+          hint="Controls which ambient background layers are active behind the Flower."
+        />
+
+        <SliderControl
+          label="Background Intensity"
+          value={config.backgroundIntensity}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(backgroundIntensity) => onPatch({ backgroundIntensity })}
+          hint="Controls how strongly the selected background theme affects stars, aura, motion, and gradient."
+        />
+
+        <SelectControl
+          label="Weekday Mode"
+          value={config.weekdayMode}
+          options={WEEKDAY_MODE_OPTIONS}
+          onChange={(weekdayMode: WeekdayMode) => onPatch({ weekdayMode })}
+          hint="Controls how the current background weekday identity is selected."
+        />
+
+        {config.weekdayMode === "fixed" ? (
+          <NumberControl
+            label={`Fixed Day Index: ${formatWeekdayIndex(config.fixedWeekdayIndex)}`}
+            value={wrapWeekdayIndex(config.fixedWeekdayIndex)}
+            min={0}
+            max={6}
+            onChange={(fixedWeekdayIndex) => onPatch({ fixedWeekdayIndex })}
+            hint="0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday."
+          />
+        ) : null}
+      </Section>
+
+      <Section title="Common">
       <SelectControl
         label="Clock Mode"
         value={config.clockMode}
@@ -511,43 +545,6 @@ const CommonControls = memo(function CommonControls({
           onChange={(fixedPaletteIndex) => onPatch({ fixedPaletteIndex })}
         />
       ) : null}
-
-      <SelectControl
-        label="Weekday Mode"
-        value={config.weekdayMode}
-        options={WEEKDAY_MODE_OPTIONS}
-        onChange={(weekdayMode: WeekdayMode) => onPatch({ weekdayMode })}
-        hint="Controls how weekday identity is chosen for weekday atmosphere and weekday palette mode."
-      />
-
-      {config.weekdayMode === "fixed" ? (
-        <NumberControl
-          label={`Fixed Day Index: ${wrapWeekdayIndex(config.fixedWeekdayIndex)} — ${WEEKDAY_NAMES[wrapWeekdayIndex(config.fixedWeekdayIndex)]}`}
-          value={wrapWeekdayIndex(config.fixedWeekdayIndex)}
-          min={0}
-          max={6}
-          onChange={(fixedWeekdayIndex) => onPatch({ fixedWeekdayIndex })}
-          hint="0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday."
-        />
-      ) : null}
-
-      <SelectControl
-        label="Day Atmosphere Mode"
-        value={config.dayAtmosphereMode}
-        options={DAY_ATMOSPHERE_OPTIONS}
-        onChange={(dayAtmosphereMode: DayAtmosphereMode) => onPatch({ dayAtmosphereMode })}
-        hint="Enables weekday atmosphere blending. Off when Weekday Mode is Off."
-      />
-
-      <SelectControl
-        label="Day Atmosphere Behavior"
-        value={config.dayAtmosphereBehavior}
-        options={DAY_ATMOSPHERE_BEHAVIOR_OPTIONS}
-        onChange={(dayAtmosphereBehavior: DayAtmosphereBehavior) =>
-          onPatch({ dayAtmosphereBehavior })
-        }
-        hint="Controls which background atmosphere channels respond to weekday identity."
-      />
 
       <SegmentedControl
         label="Performance Mode"
@@ -593,6 +590,7 @@ const CommonControls = memo(function CommonControls({
         onChange={(sponsorVisibility: SponsorVisibility) => onPatch({ sponsorVisibility })}
       />
     </Section>
+    </>
   );
 });
 
@@ -761,7 +759,7 @@ const AdvancedControls = memo(function AdvancedControls({
       </div>
 
       <div className="dev-subsection dev-subsection--reserved">
-        <h4 className="dev-subsection-title">Atmosphere Config</h4>
+        <h4 className="dev-subsection-title">Custom Background Config</h4>
         <p className="dev-note">Coming later</p>
       </div>
 
