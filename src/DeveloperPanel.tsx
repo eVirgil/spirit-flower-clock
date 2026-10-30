@@ -810,7 +810,8 @@ function DeveloperPanel({
   const [minimized, setMinimized] = useState(false);
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [cyclePreset, setCyclePreset] = useState<string>(() =>
+  const [cyclePresetOverride, setCyclePresetOverride] = useState<string | null>(null);
+  const cyclePreset = cyclePresetOverride ?? (
     CYCLE_PRESETS.includes(config.cycleDurationMs as (typeof CYCLE_PRESETS)[number])
       ? String(config.cycleDurationMs)
       : "custom"
@@ -836,14 +837,6 @@ function DeveloperPanel({
   }, [open]);
 
   useEffect(() => {
-    setCyclePreset(
-      CYCLE_PRESETS.includes(config.cycleDurationMs as (typeof CYCLE_PRESETS)[number])
-        ? String(config.cycleDurationMs)
-        : "custom"
-    );
-  }, [config.cycleDurationMs]);
-
-  useEffect(() => {
     if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -863,7 +856,7 @@ function DeveloperPanel({
 
   const handleCyclePresetChange = useCallback(
     (value: string) => {
-      setCyclePreset(value);
+      setCyclePresetOverride(value === "custom" ? "custom" : null);
       if (value !== "custom") {
         onPatch({ cycleDurationMs: Number(value) });
       }
@@ -887,6 +880,7 @@ function DeveloperPanel({
       return;
     }
     onReplace(parsed);
+    setCyclePresetOverride(null);
     setImportStatus("Config imported.");
   }, [importText, onReplace]);
 
