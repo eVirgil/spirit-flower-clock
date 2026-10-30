@@ -46,7 +46,9 @@
  * ```
  */
 import { motion, useReducedMotion } from "framer-motion";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { getCycleTiming, getWeekdayCycleTiming } from "./clockTiming";
+import { useClockNow } from "./useClockNow";
 import {
   getAuraShapeTransform,
   getBackgroundThemeByIndex,
@@ -822,41 +824,6 @@ function chunk<T>(items: T[], size: number) {
  * This replaces scattered animation timers with one coarse clock source. When
  * `pauseWhenHidden` is enabled, state updates pause while the page is hidden.
  */
-function useNow(tickMs: number, pauseWhenHidden: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    let rafId: number | null = null;
-    let lastTime = Date.now();
-    let mounted = true;
-
-    const tick = () => {
-      if (!mounted) return;
-
-      const hidden =
-        pauseWhenHidden &&
-        typeof document !== "undefined" &&
-        document.visibilityState === "hidden";
-
-      const currentTime = Date.now();
-      if (!hidden && currentTime - lastTime >= tickMs) {
-        setNow(currentTime);
-        lastTime = currentTime;
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      mounted = false;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [tickMs, pauseWhenHidden]);
-
-  return now;
-}
-
 /**
  * Smooths active-step progress without scheduling its own animation loop.
  *
@@ -1301,14 +1268,8 @@ function getPaletteSelection(
 
   if (paletteMode === "weekday") {
     const weekdayIndex = resolveWeekdayIndex({
-      now,
-      date,
-      weekdayMode,
-      cycleIndex,
-      fixedWeekdayIndex,
-      paletteCount: palettes.length,
+      now, date, weekdayMode, cycleIndex, fixedWeekdayIndex, paletteCount: palettes.length,
     });
-
     if (weekdayIndex === null) {
       return {
         previous: palettes[(cycleIndex - 1 + palettes.length) % palettes.length],
@@ -1319,15 +1280,16 @@ function getPaletteSelection(
         paletteCycleIndex: cycleIndex,
       };
     }
-
-    const index =
-      ((weekdayIndex % palettes.length) + palettes.length) % palettes.length;
+    const index = ((weekdayIndex % palettes.length) + palettes.length) % palettes.length;
+    const phase = getWeekdayCycleTiming(
+      now, date, weekdayMode, cycleIndex, cycleElapsed, cycleDuration, palettes.length
+    );
     return {
-      previous: palettes[(index - 1 + palettes.length) % palettes.length],
+      previous: palettes[weekdayMode === "fixed" ? index : (index - 1 + palettes.length) % palettes.length],
       current: palettes[index],
-      next: palettes[(index + 1) % palettes.length],
-      phaseElapsed: cycleElapsed,
-      phaseDuration: cycleDuration,
+      next: palettes[weekdayMode === "fixed" ? index : (index + 1) % palettes.length],
+      phaseElapsed: phase.elapsedMs,
+      phaseDuration: phase.durationMs,
       paletteCycleIndex: index,
     };
   }
@@ -1545,7 +1507,7 @@ export default function FlowerOfLifeClock({
   const reducedMotion = useEffectiveReducedMotion(reducedMotionOverride);
   const performanceConfig = getPerformanceConfig(performanceMode);
   const safeTickMs = Math.max(16, tickMs ?? performanceConfig.defaultTickMs);
-  const now = useNow(safeTickMs, pauseWhenHidden);
+  const now = useClockNow(reducedMotion ? Math.max(1_000, safeTickMs) : safeTickMs, pauseWhenHidden);
 
   const baseStarCount = Math.max(0, Math.min(140, starCount ?? performanceConfig.defaultStarCount));
   const effectiveAnimatedIntersectionNodeLimit = Math.max(
@@ -1563,8 +1525,8 @@ export default function FlowerOfLifeClock({
   const heavyGlowEffectsEnabled =
     (showHeavyGlowEffects ?? performanceConfig.heavyGlowEffects) && !reducedMotion;
 
-  const safeCycleMs = Math.max(1_000, cycleMs);
-  const effectiveCycleMs = mode === "wall-clock" ? MINUTE_MS : safeCycleMs;
+  const clockTiming = getCycleTiming(now, mode, cycleMs);
+  const effectiveCycleMs = clockTiming.durationMs;
 
   const date = useMemo(() => new Date(now), [now]);
   const bgStrength =
@@ -1572,6 +1534,7 @@ export default function FlowerOfLifeClock({
   const bgStarsEnabled = bgStrength > 0 && hasBackgroundStars(backgroundMode) && !reducedMotion;
   const bgMotionEnabled = bgStrength > 0 && hasBackgroundMotion(backgroundMode) && !reducedMotion;
   const bgAuraEnabled = bgStrength > 0 && hasBackgroundAura(backgroundMode);
+  const bgAuraMotionEnabled = bgAuraEnabled && !reducedMotion;
   const bgGradientEnabled = bgStrength > 0 && hasBackgroundGradient(backgroundMode);
   const bgGlowEnabled = bgStrength > 0 && hasBackgroundGlow(backgroundMode);
   const clipRadius = clipMul * r;
@@ -1599,10 +1562,7 @@ export default function FlowerOfLifeClock({
   const totalSteps = Math.max(1, steps.length + 1);
   const stepMs = effectiveCycleMs / totalSteps;
 
-  const wallClockElapsed =
-    date.getSeconds() * 1000 + date.getMilliseconds();
-  const cycleIndex =
-    mode === "wall-clock" ? Math.floor(now / MINUTE_MS) : Math.floor(now / effectiveCycleMs);
+  const cycleIndex = clockTiming.cycleIndex;
   const backgroundTheme = useMemo(
     () => getBackgroundTheme(now, date, weekdayMode, cycleIndex, fixedWeekdayIndex),
     [now, date, weekdayMode, cycleIndex, fixedWeekdayIndex]
@@ -1623,13 +1583,13 @@ export default function FlowerOfLifeClock({
       reducedMotion ? 0 : (animatedStarLimit ?? performanceConfig.animatedStarLimit)
     )
   );
-  const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
+  const cycleElapsed = clockTiming.elapsedMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
   const stepFloat = cycleElapsed / stepMs;
   const computedStepIndex = Math.min(totalSteps - 1, Math.floor(stepFloat));
   const forcedPhase = useMemo(
-    () => resolveForcedPhase(forcePhase, steps),
-    [forcePhase, steps]
+    () => resolveForcedPhase(reducedMotion && forcePhase === "auto" ? "glow" : forcePhase, steps),
+    [forcePhase, steps, reducedMotion]
   );
   const activeStepIndex = forcedPhase?.activeStepIndex ?? computedStepIndex;
   const rawStepProgress = easeInOutQuart(stepFloat - computedStepIndex);
@@ -2043,7 +2003,7 @@ export default function FlowerOfLifeClock({
             fill={backgroundTheme.tint}
             opacity={dayTintOpacity * 0.55}
             animate={
-              bgAuraEnabled
+              bgAuraMotionEnabled
                 ? {
                     opacity: [
                       dayTintOpacity * 0.38,
@@ -2054,7 +2014,7 @@ export default function FlowerOfLifeClock({
                 : undefined
             }
             transition={
-              bgAuraEnabled
+              bgAuraMotionEnabled
                 ? {
                     duration: auraBreathDuration,
                     repeat: Infinity,
@@ -2091,7 +2051,7 @@ export default function FlowerOfLifeClock({
           />
         ) : null}
 
-        {showStarfield ? (
+        {showStarfield && bgStrength > 0 && hasBackgroundStars(backgroundMode) ? (
           <g opacity={0.92}>
             {stars.map((star, index) => {
               const twinkleSpeed = backgroundTheme.stars.twinkleSpeed;
@@ -2181,7 +2141,7 @@ export default function FlowerOfLifeClock({
           fill="url(#flowerClockAura)"
           opacity={baseAuraOpacity + dayAuraOpacityBoost * 0.5}
           animate={
-            bgAuraEnabled
+            bgAuraMotionEnabled
               ? {
                   opacity: [
                     baseAuraOpacity,
@@ -2203,7 +2163,7 @@ export default function FlowerOfLifeClock({
               : undefined
           }
           transition={
-            bgAuraEnabled
+            bgAuraMotionEnabled
               ? {
                   duration: auraBreathDuration,
                   repeat: Infinity,
