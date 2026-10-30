@@ -8,7 +8,7 @@ async function importSource(path) {
   return import("data:text/javascript;base64," + Buffer.from(result.outputFiles[0].text).toString("base64"));
 }
 
-const { getCycleTiming } = await importSource("src/clockTiming.ts");
+const { getCycleTiming, getWeekdayCycleTiming } = await importSource("src/clockTiming.ts");
 const { pickValidatedClockOverrides } = await importSource("src/configValidation.ts");
 const { resolveWeekdayIndex } = await importSource("src/weekdayMode.ts");
 
@@ -39,4 +39,23 @@ test("weekday calculation honors real local weekday and fixed index", () => {
   assert.equal(resolveWeekdayIndex({ ...args, weekdayMode: "cycle-day" }), date.getDay());
   assert.equal(resolveWeekdayIndex({ ...args, weekdayMode: "fixed" }), 2);
   assert.equal(resolveWeekdayIndex({ ...args, weekdayMode: "off" }), null);
+});
+
+test("weekday palette phase follows the day instead of restarting each minute", () => {
+  const date = new Date(2026, 9, 30, 12, 30, 0);
+  const phase = getWeekdayCycleTiming(date.getTime(), date, "cycle-day", 100, 0, 60_000, 7);
+  assert.equal(phase.durationMs, 86_400_000);
+  assert.equal(phase.elapsedMs, 12.5 * 3_600_000);
+});
+
+test("seven-minute cadence advances after one complete palette rotation", () => {
+  assert.deepEqual(getWeekdayCycleTiming(0, new Date(0), "cycle-seven-minutes", 8, 5_000, 60_000, 7), {
+    elapsedMs: 65_000, durationMs: 420_000
+  });
+});
+
+test("fixed weekday selection does not transition", () => {
+  assert.deepEqual(getWeekdayCycleTiming(0, new Date(0), "fixed", 0, 0, 60_000, 7), {
+    elapsedMs: 0, durationMs: 1
+  });
 });
