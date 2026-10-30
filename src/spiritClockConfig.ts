@@ -1,8 +1,5 @@
-import {
-  DEFAULT_CLOCK_CONFIG,
-  type FlowerClockProps,
-  type ForcePhase,
-} from "./FlowerOfLifeClock";
+import { type FlowerClockProps, type ForcePhase } from "./FlowerOfLifeClock";
+import { DEFAULT_CLOCK_CONFIG } from "./flowerClockDefaults";
 import {
   migrateBackgroundMode,
   type BackgroundLayerMode,

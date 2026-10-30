@@ -773,7 +773,7 @@ function getBackgroundTheme(
  * the Seed of Life, ring 2 expands the Flower, and ring 3 is used for clipped
  * outer arcs.
  */
-export function makeCenters(r: number, maxRing: Ring) {
+function makeCenters(r: number, maxRing: Ring) {
   if (!(r > 0) || !Number.isFinite(r)) {
     return {
       ring0: [] as Pt[],
@@ -832,28 +832,10 @@ function chunk<T>(items: T[], size: number) {
  * memory/GPU spikes. On step changes, it immediately returns the new target to
  * prevent a one-frame full-circle flash.
  */
-function useLerpedProgress(targetProgress: number, lerpFactor: number, stepIndex: number) {
-  const stateRef = useRef({
-    progress: targetProgress,
-    stepIndex,
-  });
-
-  // Render-driven smoothing only. This deliberately avoids its own RAF/state loop.
-  // useNow already drives the component clock; adding another RAF here was the main
-  // source of extra renders and memory churn.
-  if (stateRef.current.stepIndex !== stepIndex) {
-    stateRef.current = {
-      progress: targetProgress,
-      stepIndex,
-    };
-    return targetProgress;
-  }
-
-  const diff = Math.abs(targetProgress - stateRef.current.progress);
-  stateRef.current.progress =
-    diff < 0.001 ? targetProgress : lerp(stateRef.current.progress, targetProgress, lerpFactor);
-
-  return stateRef.current.progress;
+function smoothDrawProgress(targetProgress: number, lerpFactor: number) {
+  // Deterministic, render-pure micro-lag. Avoid ref mutations during React render.
+  const lag = (1 - clamp01(lerpFactor)) * 0.035;
+  return clamp01((targetProgress - lag) / (1 - lag));
 }
 
 function makeCirclePiece(
@@ -1403,10 +1385,7 @@ const ClockPiece = memo(function ClockPiece({
 }) {
   if (piece.kind !== "circle") return null;
 
-  const strokeDashoffset = useMemo(
-    () => 1 - clamp01(progress),
-    [progress]
-  );
+  const strokeDashoffset = 1 - clamp01(progress);
 
   return (
     <circle
@@ -1596,11 +1575,7 @@ export default function FlowerOfLifeClock({
   const isGlowStep = forcedPhase?.isGlowStep ?? activeStepIndex >= steps.length;
 
   // Apply lerp smoothing for butter-smooth animations (resets on step change).
-  const lerpedStepProgress = useLerpedProgress(
-    rawStepProgress,
-    lerpFactor,
-    computedStepIndex
-  );
+  const lerpedStepProgress = smoothDrawProgress(rawStepProgress, lerpFactor);
   const activeStepProgress = forcedPhase?.activeStepProgress ?? lerpedStepProgress;
 
   const paletteSelection = useMemo(
@@ -2639,55 +2614,3 @@ export default function FlowerOfLifeClock({
     </div>
   );
 }
-
-
-export const DEFAULT_CLOCK_CONFIG = {
-  mode: "wall-clock",
-  paletteMode: "dayPhase",
-
-  performanceMode: "balanced",
-  pauseWhenHidden: true,
-
-  showStatus: true,
-  showMinuteTicks: false,
-
-  showDrawHead: true,
-  showIntersectionNodes: true,
-
-  showStarfield: true,
-  showBackground: true,
-  backgroundMode: "full",
-  backgroundStrength: 0.75,
-  weekdayMode: "cycle-day",
-  showWeekdayInStatus: false,
-
-  paletteTransitionMs: 1500,
-  lerpFactor: 0.18,
-} satisfies Partial<FlowerClockProps>;
-
-export const DEMO_CLOCK_CONFIG = {
-  mode: "cycle",
-  cycleMs: 30_000,
-  paletteMode: "cycle",
-
-  performanceMode: "quality",
-  pauseWhenHidden: true,
-
-  showStatus: true,
-  showMinuteTicks: true,
-
-  showDrawHead: true,
-  showIntersectionNodes: true,
-
-  showStarfield: true,
-  showBackground: true,
-  backgroundMode: "full",
-  backgroundStrength: 1,
-  weekdayMode: "cycle-minute",
-  showWeekdayInStatus: true,
-
-  paletteTransitionMs: 1200,
-  lerpFactor: 0.18,
-
-  showHeavyGlowEffects: true,
-} satisfies Partial<FlowerClockProps>;
