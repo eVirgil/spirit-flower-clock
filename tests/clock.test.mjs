@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { build } from "esbuild";
+import ts from "typescript";
+import { readFileSync } from "node:fs";
 
-// Bundle dependency-free TypeScript modules without installing a new test framework.
+// Transpile dependency-free TypeScript modules using the project's direct dependency.
 async function importSource(path) {
-  const result = await build({ entryPoints: [path], bundle: true, format: "esm", platform: "node", write: false });
-  return import("data:text/javascript;base64," + Buffer.from(result.outputFiles[0].text).toString("base64"));
+  const source = readFileSync(path, "utf8");
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 }
+  }).outputText;
+  return import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 }
 
 const { getCycleTiming, getWeekdayCycleTiming } = await importSource("src/clockTiming.ts");
