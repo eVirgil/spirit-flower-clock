@@ -459,12 +459,6 @@ const CYCLE_DURATION_OPTIONS: Option<string>[] = [
 
 const CYCLE_PRESETS = [30_000, 60_000, 120_000] as const;
 
-function isFormFieldTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
 const CommonControls = memo(function CommonControls({
   config,
   onPatch,
