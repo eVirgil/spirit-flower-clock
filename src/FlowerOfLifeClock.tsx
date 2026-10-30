@@ -2034,7 +2034,7 @@ export default function FlowerOfLifeClock({
             fill={backgroundTheme.tint}
             opacity={envGlowBase}
             filter="url(#flowerClockGlowSoft)"
-            animate={{
+            animate={reducedMotion ? undefined : {
               opacity: [
                 envGlowBase * (1 - envGlowPulseDepth * 0.35),
                 envGlowBase * (1 + envGlowPulseDepth),
@@ -2042,7 +2042,7 @@ export default function FlowerOfLifeClock({
               ],
               scale: [0.96, 1.06, 0.98],
             }}
-            transition={{
+            transition={reducedMotion ? undefined : {
               duration: envGlowPulseDuration,
               repeat: Infinity,
               ease: "easeInOut",
@@ -2527,13 +2527,13 @@ export default function FlowerOfLifeClock({
               {/* Main glow with Sacred Pulse (double heartbeat) + Phoenix Rising */}
               <motion.g
                 filter="url(#flowerClockGlowIntense)"
-                initial={{ opacity: 0, scale: 1 }}
-                animate={{
+                initial={reducedMotion ? false : { opacity: 0, scale: 1 }}
+                animate={reducedMotion ? { opacity: glowOpacity, scale: 1 } : {
                   // Sacred Pulse: double heartbeat pattern.
                   opacity: [0, glowOpacity * 0.4, glowOpacity * 0.6, glowOpacity * 0.85, glowOpacity],
                   scale: [1, 1.04, 1.01, 1.06, 1.02],
                 }}
-                transition={{
+                transition={reducedMotion ? { duration: 0 } : {
                   duration: Math.max(1.2, stepMs / 1000),
                   ease: [0.43, 0.13, 0.23, 0.96],
                   times: [0, 0.15, 0.3, 0.45, 1],
