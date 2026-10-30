@@ -285,7 +285,6 @@ const CLOCK_MODE_OPTIONS: Option<ClockMode>[] = [
     value: "showcase",
     label: "Showcase",
     description: "Demo cycle with minute ticks for presentations.",
-    disabled: true,
   },
 ];
 
@@ -623,13 +622,18 @@ const AdvancedControls = memo(function AdvancedControls({
     <Section title="Advanced" collapsible defaultCollapsed>
       <div className="dev-subsection">
         <h4 className="dev-subsection-title">Timing</h4>
-        <SelectControl
-          label="Cycle Duration"
-          value={cyclePreset}
-          options={CYCLE_DURATION_OPTIONS}
-          onChange={onCyclePresetChange}
-        />
-        {cyclePreset === "custom" ? (
+        {config.clockMode === "showcase" ? (
+          <SelectControl
+            label="Cycle Duration"
+            value={cyclePreset}
+            options={CYCLE_DURATION_OPTIONS}
+            onChange={onCyclePresetChange}
+            hint="Only Showcase runs an independently timed cycle; wall-clock modes follow the real minute."
+          />
+        ) : (
+          <p className="dev-hint">The real-time clock always uses the current minute. Select Showcase to customize its cycle duration.</p>
+        )}
+        {config.clockMode === "showcase" && cyclePreset === "custom" ? (
           <NumberControl
             label="Custom Cycle (ms)"
             value={config.cycleDurationMs}
@@ -808,6 +812,7 @@ function DeveloperPanel({
   const panelRef = useRef<HTMLElement>(null);
   const minimizeButtonRef = useRef<HTMLButtonElement>(null);
   const didInitialFocusRef = useRef(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -823,18 +828,32 @@ function DeveloperPanel({
       return;
     }
 
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     if (!didInitialFocusRef.current) {
       didInitialFocusRef.current = true;
       minimizeButtonRef.current?.focus();
     }
+    return () => {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
   }, [open]);
+
+  useEffect(() => {
+    setCyclePreset(
+      CYCLE_PRESETS.includes(config.cycleDurationMs as (typeof CYCLE_PRESETS)[number])
+        ? String(config.cycleDurationMs)
+        : "custom"
+    );
+  }, [config.cycleDurationMs]);
 
   useEffect(() => {
     if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (isFormFieldTarget(event.target)) return;
+      if (event.key !== "Escape" || event.isComposing) return;
 
       event.preventDefault();
       if (minimized) {
@@ -859,14 +878,18 @@ function DeveloperPanel({
   );
 
   const handleCopyConfig = useCallback(async () => {
-    await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
-    setImportStatus("Config copied to clipboard.");
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+      setImportStatus("Config copied to clipboard.");
+    } catch {
+      setImportStatus("Clipboard access failed. Check browser permissions.");
+    }
   }, [config]);
 
   const handleImportConfig = useCallback(() => {
     const parsed = parseSpiritClockConfig(importText);
     if (!parsed) {
-      setImportStatus("Invalid JSON — config not applied.");
+      setImportStatus("Invalid configuration or out-of-range values — not applied.");
       return;
     }
     onReplace(parsed);
@@ -883,9 +906,7 @@ function DeveloperPanel({
     <aside
       ref={panelRef}
       className={panelClassName}
-      role="dialog"
-      aria-modal={!minimized}
-      aria-label="Developer Mode"
+      aria-label="Developer Mode controls"
     >
       <header className="dev-panel-header">
         <h2 className="dev-panel-title">Developer Mode</h2>

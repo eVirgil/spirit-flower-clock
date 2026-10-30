@@ -9,6 +9,7 @@
     "build:dist": "npm run build && npm run package:dist",
     "package:dist": "rm -f flower-clock-dist.zip && cd dist && zip -r ../flower-clock-dist.zip .",
     "lint": "eslint .",
+    "test": "node --test tests/*.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

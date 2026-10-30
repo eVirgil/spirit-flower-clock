@@ -8,6 +8,7 @@ import {
   type BackgroundLayerMode,
 } from "./backgroundThemes";
 import { migrateWeekdayMode, type WeekdayMode } from "./weekdayMode";
+import { pickValidatedClockOverrides } from "./configValidation";
 
 export type { ForcePhase };
 export type { WeekdayMode };
@@ -307,11 +308,15 @@ export function clockSizeClass(size: ClockSize): string {
 
 export function parseSpiritClockConfig(json: string): SpiritClockConfig | null {
   try {
-    const parsed = JSON.parse(json) as Partial<SpiritClockConfig> & Record<string, unknown>;
-    const migrated = migrateConfigFields(parsed);
+    const parsed: unknown = JSON.parse(json);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const input = parsed as Record<string, unknown>;
+    const overrides = pickValidatedClockOverrides(input, DEFAULT_SPIRIT_CLOCK_CONFIG);
+    if (overrides === null) return null;
+    const migrated = migrateConfigFields(input as Partial<SpiritClockConfig> & Record<string, unknown>);
     return {
       ...DEFAULT_SPIRIT_CLOCK_CONFIG,
-      ...parsed,
+      ...overrides,
       ...migrated,
     };
   } catch {
