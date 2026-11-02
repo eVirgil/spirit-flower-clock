@@ -1,14 +1,14 @@
 # Spirit Flower Clock
 
-A living Flower of Life clock that redraws sacred geometry each minute, cycling through luminous color palettes in React and SVG.
+A living Flower of Life clock that redraws sacred geometry each minute, using time-of-day color palettes in React and SVG.
 
-Spirit Flower Clock is an experimental visual timepiece built with React, TypeScript, Vite, SVG, and Framer Motion. It draws the Flower of Life over a timed cycle, shifts color palettes each minute, and settles into a glowing animated state before the next redraw begins.
+Spirit Flower Clock is an experimental visual timepiece built with React, TypeScript, Vite, SVG, and Framer Motion. It draws the Flower of Life over a timed cycle, uses time-of-day palettes by default (with optional minute-by-minute palette cycling), and settles into a glowing animated state before the next redraw begins.
 
 ## Features
 
 * Animated Flower of Life clock
 * One-minute redraw cycle
-* New color palette each cycle
+* Day-phase palette selection by default; optional per-cycle, hourly, weekday, or fixed colors
 * SVG-based sacred geometry
 * Framer Motion animation
 * Responsive visual layout
@@ -67,6 +67,14 @@ If you enjoy this project or want to support more open-source creative experimen
 
 [Sponsor Eric Virgil](https://github.com/sponsors/eVirgil)
 
+## Development checks
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
 ## License
 
-MIT
+MIT. See the [LICENSE](LICENSE) file.

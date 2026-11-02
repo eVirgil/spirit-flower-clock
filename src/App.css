@@ -729,3 +729,8 @@
     max-height: min(52vh, calc(100dvh - 1.5rem));
   }
 }
+/* Respect system motion preferences, including shell transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .clock-title, .clock-time-layer, .clock-meta-layer { transition: none; }
+  .flower-clock-shell--unlock, .dev-unlock-banner { animation: none; }
+}

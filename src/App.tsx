@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import ClockShell from "./ClockShell";
 import DeveloperPanel from "./DeveloperPanel";
@@ -18,14 +18,21 @@ export default function App() {
   const [devPanelOpen, setDevPanelOpen] = useState(false);
   const [unlockAnimating, setUnlockAnimating] = useState(false);
   const [debugInfo, setDebugInfo] = useState<SpiritClockDebugInfo | null>(null);
+  const unlockTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (unlockTimerRef.current !== null) window.clearTimeout(unlockTimerRef.current);
+  }, []);
 
   const handleKonamiUnlock = useCallback(() => {
     if (!devUnlocked) {
       setDevUnlocked(true);
       setUnlockAnimating(true);
-      window.setTimeout(() => {
+      if (unlockTimerRef.current !== null) window.clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = window.setTimeout(() => {
         setUnlockAnimating(false);
         setDevPanelOpen(true);
+        unlockTimerRef.current = null;
       }, UNLOCK_ANIMATION_MS);
       return;
     }

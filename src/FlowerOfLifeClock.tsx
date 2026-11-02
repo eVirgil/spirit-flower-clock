@@ -46,7 +46,9 @@
  * ```
  */
 import { motion, useReducedMotion } from "framer-motion";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { getCycleTiming, getWeekdayCycleTiming } from "./clockTiming";
+import { useClockNow } from "./useClockNow";
 import {
   getAuraShapeTransform,
   getBackgroundThemeByIndex,
@@ -771,7 +773,7 @@ function getBackgroundTheme(
  * the Seed of Life, ring 2 expands the Flower, and ring 3 is used for clipped
  * outer arcs.
  */
-export function makeCenters(r: number, maxRing: Ring) {
+function makeCenters(r: number, maxRing: Ring) {
   if (!(r > 0) || !Number.isFinite(r)) {
     return {
       ring0: [] as Pt[],
@@ -822,41 +824,6 @@ function chunk<T>(items: T[], size: number) {
  * This replaces scattered animation timers with one coarse clock source. When
  * `pauseWhenHidden` is enabled, state updates pause while the page is hidden.
  */
-function useNow(tickMs: number, pauseWhenHidden: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    let rafId: number | null = null;
-    let lastTime = Date.now();
-    let mounted = true;
-
-    const tick = () => {
-      if (!mounted) return;
-
-      const hidden =
-        pauseWhenHidden &&
-        typeof document !== "undefined" &&
-        document.visibilityState === "hidden";
-
-      const currentTime = Date.now();
-      if (!hidden && currentTime - lastTime >= tickMs) {
-        setNow(currentTime);
-        lastTime = currentTime;
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      mounted = false;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [tickMs, pauseWhenHidden]);
-
-  return now;
-}
-
 /**
  * Smooths active-step progress without scheduling its own animation loop.
  *
@@ -865,28 +832,10 @@ function useNow(tickMs: number, pauseWhenHidden: boolean) {
  * memory/GPU spikes. On step changes, it immediately returns the new target to
  * prevent a one-frame full-circle flash.
  */
-function useLerpedProgress(targetProgress: number, lerpFactor: number, stepIndex: number) {
-  const stateRef = useRef({
-    progress: targetProgress,
-    stepIndex,
-  });
-
-  // Render-driven smoothing only. This deliberately avoids its own RAF/state loop.
-  // useNow already drives the component clock; adding another RAF here was the main
-  // source of extra renders and memory churn.
-  if (stateRef.current.stepIndex !== stepIndex) {
-    stateRef.current = {
-      progress: targetProgress,
-      stepIndex,
-    };
-    return targetProgress;
-  }
-
-  const diff = Math.abs(targetProgress - stateRef.current.progress);
-  stateRef.current.progress =
-    diff < 0.001 ? targetProgress : lerp(stateRef.current.progress, targetProgress, lerpFactor);
-
-  return stateRef.current.progress;
+function smoothDrawProgress(targetProgress: number, lerpFactor: number) {
+  // Deterministic, render-pure micro-lag. Avoid ref mutations during React render.
+  const lag = (1 - clamp01(lerpFactor)) * 0.035;
+  return clamp01((targetProgress - lag) / (1 - lag));
 }
 
 function makeCirclePiece(
@@ -1301,14 +1250,8 @@ function getPaletteSelection(
 
   if (paletteMode === "weekday") {
     const weekdayIndex = resolveWeekdayIndex({
-      now,
-      date,
-      weekdayMode,
-      cycleIndex,
-      fixedWeekdayIndex,
-      paletteCount: palettes.length,
+      now, date, weekdayMode, cycleIndex, fixedWeekdayIndex, paletteCount: palettes.length,
     });
-
     if (weekdayIndex === null) {
       return {
         previous: palettes[(cycleIndex - 1 + palettes.length) % palettes.length],
@@ -1319,15 +1262,16 @@ function getPaletteSelection(
         paletteCycleIndex: cycleIndex,
       };
     }
-
-    const index =
-      ((weekdayIndex % palettes.length) + palettes.length) % palettes.length;
+    const index = ((weekdayIndex % palettes.length) + palettes.length) % palettes.length;
+    const phase = getWeekdayCycleTiming(
+      now, date, weekdayMode, cycleIndex, cycleElapsed, cycleDuration, palettes.length
+    );
     return {
-      previous: palettes[(index - 1 + palettes.length) % palettes.length],
+      previous: palettes[weekdayMode === "fixed" ? index : (index - 1 + palettes.length) % palettes.length],
       current: palettes[index],
-      next: palettes[(index + 1) % palettes.length],
-      phaseElapsed: cycleElapsed,
-      phaseDuration: cycleDuration,
+      next: palettes[weekdayMode === "fixed" ? index : (index + 1) % palettes.length],
+      phaseElapsed: phase.elapsedMs,
+      phaseDuration: phase.durationMs,
       paletteCycleIndex: index,
     };
   }
@@ -1441,10 +1385,7 @@ const ClockPiece = memo(function ClockPiece({
 }) {
   if (piece.kind !== "circle") return null;
 
-  const strokeDashoffset = useMemo(
-    () => 1 - clamp01(progress),
-    [progress]
-  );
+  const strokeDashoffset = 1 - clamp01(progress);
 
   return (
     <circle
@@ -1545,7 +1486,7 @@ export default function FlowerOfLifeClock({
   const reducedMotion = useEffectiveReducedMotion(reducedMotionOverride);
   const performanceConfig = getPerformanceConfig(performanceMode);
   const safeTickMs = Math.max(16, tickMs ?? performanceConfig.defaultTickMs);
-  const now = useNow(safeTickMs, pauseWhenHidden);
+  const now = useClockNow(reducedMotion ? Math.max(1_000, safeTickMs) : safeTickMs, pauseWhenHidden);
 
   const baseStarCount = Math.max(0, Math.min(140, starCount ?? performanceConfig.defaultStarCount));
   const effectiveAnimatedIntersectionNodeLimit = Math.max(
@@ -1563,8 +1504,8 @@ export default function FlowerOfLifeClock({
   const heavyGlowEffectsEnabled =
     (showHeavyGlowEffects ?? performanceConfig.heavyGlowEffects) && !reducedMotion;
 
-  const safeCycleMs = Math.max(1_000, cycleMs);
-  const effectiveCycleMs = mode === "wall-clock" ? MINUTE_MS : safeCycleMs;
+  const clockTiming = getCycleTiming(now, mode, cycleMs);
+  const effectiveCycleMs = clockTiming.durationMs;
 
   const date = useMemo(() => new Date(now), [now]);
   const bgStrength =
@@ -1572,6 +1513,7 @@ export default function FlowerOfLifeClock({
   const bgStarsEnabled = bgStrength > 0 && hasBackgroundStars(backgroundMode) && !reducedMotion;
   const bgMotionEnabled = bgStrength > 0 && hasBackgroundMotion(backgroundMode) && !reducedMotion;
   const bgAuraEnabled = bgStrength > 0 && hasBackgroundAura(backgroundMode);
+  const bgAuraMotionEnabled = bgAuraEnabled && !reducedMotion;
   const bgGradientEnabled = bgStrength > 0 && hasBackgroundGradient(backgroundMode);
   const bgGlowEnabled = bgStrength > 0 && hasBackgroundGlow(backgroundMode);
   const clipRadius = clipMul * r;
@@ -1599,10 +1541,7 @@ export default function FlowerOfLifeClock({
   const totalSteps = Math.max(1, steps.length + 1);
   const stepMs = effectiveCycleMs / totalSteps;
 
-  const wallClockElapsed =
-    date.getSeconds() * 1000 + date.getMilliseconds();
-  const cycleIndex =
-    mode === "wall-clock" ? Math.floor(now / MINUTE_MS) : Math.floor(now / effectiveCycleMs);
+  const cycleIndex = clockTiming.cycleIndex;
   const backgroundTheme = useMemo(
     () => getBackgroundTheme(now, date, weekdayMode, cycleIndex, fixedWeekdayIndex),
     [now, date, weekdayMode, cycleIndex, fixedWeekdayIndex]
@@ -1623,24 +1562,20 @@ export default function FlowerOfLifeClock({
       reducedMotion ? 0 : (animatedStarLimit ?? performanceConfig.animatedStarLimit)
     )
   );
-  const cycleElapsed = mode === "wall-clock" ? wallClockElapsed : now % effectiveCycleMs;
+  const cycleElapsed = clockTiming.elapsedMs;
   const cycleProgress = cycleElapsed / effectiveCycleMs;
   const stepFloat = cycleElapsed / stepMs;
   const computedStepIndex = Math.min(totalSteps - 1, Math.floor(stepFloat));
   const forcedPhase = useMemo(
-    () => resolveForcedPhase(forcePhase, steps),
-    [forcePhase, steps]
+    () => resolveForcedPhase(reducedMotion && forcePhase === "auto" ? "glow" : forcePhase, steps),
+    [forcePhase, steps, reducedMotion]
   );
   const activeStepIndex = forcedPhase?.activeStepIndex ?? computedStepIndex;
   const rawStepProgress = easeInOutQuart(stepFloat - computedStepIndex);
   const isGlowStep = forcedPhase?.isGlowStep ?? activeStepIndex >= steps.length;
 
   // Apply lerp smoothing for butter-smooth animations (resets on step change).
-  const lerpedStepProgress = useLerpedProgress(
-    rawStepProgress,
-    lerpFactor,
-    computedStepIndex
-  );
+  const lerpedStepProgress = smoothDrawProgress(rawStepProgress, lerpFactor);
   const activeStepProgress = forcedPhase?.activeStepProgress ?? lerpedStepProgress;
 
   const paletteSelection = useMemo(
@@ -2043,7 +1978,7 @@ export default function FlowerOfLifeClock({
             fill={backgroundTheme.tint}
             opacity={dayTintOpacity * 0.55}
             animate={
-              bgAuraEnabled
+              bgAuraMotionEnabled
                 ? {
                     opacity: [
                       dayTintOpacity * 0.38,
@@ -2054,7 +1989,7 @@ export default function FlowerOfLifeClock({
                 : undefined
             }
             transition={
-              bgAuraEnabled
+              bgAuraMotionEnabled
                 ? {
                     duration: auraBreathDuration,
                     repeat: Infinity,
@@ -2074,7 +2009,7 @@ export default function FlowerOfLifeClock({
             fill={backgroundTheme.tint}
             opacity={envGlowBase}
             filter="url(#flowerClockGlowSoft)"
-            animate={{
+            animate={reducedMotion ? undefined : {
               opacity: [
                 envGlowBase * (1 - envGlowPulseDepth * 0.35),
                 envGlowBase * (1 + envGlowPulseDepth),
@@ -2082,7 +2017,7 @@ export default function FlowerOfLifeClock({
               ],
               scale: [0.96, 1.06, 0.98],
             }}
-            transition={{
+            transition={reducedMotion ? undefined : {
               duration: envGlowPulseDuration,
               repeat: Infinity,
               ease: "easeInOut",
@@ -2091,7 +2026,7 @@ export default function FlowerOfLifeClock({
           />
         ) : null}
 
-        {showStarfield ? (
+        {showStarfield && bgStrength > 0 && hasBackgroundStars(backgroundMode) ? (
           <g opacity={0.92}>
             {stars.map((star, index) => {
               const twinkleSpeed = backgroundTheme.stars.twinkleSpeed;
@@ -2181,7 +2116,7 @@ export default function FlowerOfLifeClock({
           fill="url(#flowerClockAura)"
           opacity={baseAuraOpacity + dayAuraOpacityBoost * 0.5}
           animate={
-            bgAuraEnabled
+            bgAuraMotionEnabled
               ? {
                   opacity: [
                     baseAuraOpacity,
@@ -2203,7 +2138,7 @@ export default function FlowerOfLifeClock({
               : undefined
           }
           transition={
-            bgAuraEnabled
+            bgAuraMotionEnabled
               ? {
                   duration: auraBreathDuration,
                   repeat: Infinity,
@@ -2567,13 +2502,13 @@ export default function FlowerOfLifeClock({
               {/* Main glow with Sacred Pulse (double heartbeat) + Phoenix Rising */}
               <motion.g
                 filter="url(#flowerClockGlowIntense)"
-                initial={{ opacity: 0, scale: 1 }}
-                animate={{
+                initial={reducedMotion ? false : { opacity: 0, scale: 1 }}
+                animate={reducedMotion ? { opacity: glowOpacity, scale: 1 } : {
                   // Sacred Pulse: double heartbeat pattern.
                   opacity: [0, glowOpacity * 0.4, glowOpacity * 0.6, glowOpacity * 0.85, glowOpacity],
                   scale: [1, 1.04, 1.01, 1.06, 1.02],
                 }}
-                transition={{
+                transition={reducedMotion ? { duration: 0 } : {
                   duration: Math.max(1.2, stepMs / 1000),
                   ease: [0.43, 0.13, 0.23, 0.96],
                   times: [0, 0.15, 0.3, 0.45, 1],
@@ -2679,55 +2614,3 @@ export default function FlowerOfLifeClock({
     </div>
   );
 }
-
-
-export const DEFAULT_CLOCK_CONFIG = {
-  mode: "wall-clock",
-  paletteMode: "dayPhase",
-
-  performanceMode: "balanced",
-  pauseWhenHidden: true,
-
-  showStatus: true,
-  showMinuteTicks: false,
-
-  showDrawHead: true,
-  showIntersectionNodes: true,
-
-  showStarfield: true,
-  showBackground: true,
-  backgroundMode: "full",
-  backgroundStrength: 0.75,
-  weekdayMode: "cycle-day",
-  showWeekdayInStatus: false,
-
-  paletteTransitionMs: 1500,
-  lerpFactor: 0.18,
-} satisfies Partial<FlowerClockProps>;
-
-export const DEMO_CLOCK_CONFIG = {
-  mode: "cycle",
-  cycleMs: 30_000,
-  paletteMode: "cycle",
-
-  performanceMode: "quality",
-  pauseWhenHidden: true,
-
-  showStatus: true,
-  showMinuteTicks: true,
-
-  showDrawHead: true,
-  showIntersectionNodes: true,
-
-  showStarfield: true,
-  showBackground: true,
-  backgroundMode: "full",
-  backgroundStrength: 1,
-  weekdayMode: "cycle-minute",
-  showWeekdayInStatus: true,
-
-  paletteTransitionMs: 1200,
-  lerpFactor: 0.18,
-
-  showHeavyGlowEffects: true,
-} satisfies Partial<FlowerClockProps>;
