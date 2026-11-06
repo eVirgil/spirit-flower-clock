@@ -84,3 +84,5 @@ MIT. See the [LICENSE](LICENSE) file.
 The decorative starfield, minute ticks, and intersection-node animations are memoized independently of the clock's progress updates. Their rendering changes only when their visual inputs change (palette, current second, theme, geometry, or mode), while Framer Motion keeps their existing animations running between React updates. The clock's scheduling loop is fully suspended in hidden tabs when `pauseWhenHidden` is enabled and resumes on visibility changes.
 
 The default visual settings are unchanged. Before merging performance changes, manually check a full minute cycle and try Dev Mode's background, palette, performance, and reduced-motion choices. No browser automation or screenshot-baseline infrastructure is required for this pass.
+
+Completed Flower of Life geometry steps now use stable memoized SVG subtrees, while only the current reveal step receives 33 ms drawing-progress updates. The same clipped/unclipped circle markup and step ordering are used for both, including the final glow phase and forced Showcase phases. No new visual presets or screenshot/browser test framework were added.
