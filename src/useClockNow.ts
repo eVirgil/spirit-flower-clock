@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 /**
  * Wall time is the displayed value; monotonic time throttles refreshes.
- * Visibility recovery always refreshes immediately, including after sleep.
+ * No background timer is retained when pauseWhenHidden is enabled.
+ * Visibility recovery refreshes immediately, including after sleep.
  */
 export function useClockNow(tickMs: number, pauseWhenHidden: boolean) {
   const [now, setNow] = useState(() => Date.now());
@@ -12,16 +13,30 @@ export function useClockNow(tickMs: number, pauseWhenHidden: boolean) {
     let active = true;
     let lastTick = performance.now();
 
+    const clearScheduled = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
     const schedule = () => {
-      if (!active) return;
-      if ((pauseWhenHidden && document.visibilityState === "hidden") || tickMs >= 64) {
-        timeoutId = window.setTimeout(tick, pauseWhenHidden && document.visibilityState === "hidden" ? 1_000 : tickMs);
+      // Page visibility events resume the loop. No polling while suspended.
+      if (!active || (pauseWhenHidden && document.visibilityState === "hidden")) return;
+      if (tickMs >= 64) {
+        timeoutId = window.setTimeout(tick, tickMs);
       } else {
         rafId = requestAnimationFrame(tick);
       }
     };
 
     const tick = () => {
+      rafId = null;
+      timeoutId = null;
       if (!active) return;
       if (!pauseWhenHidden || document.visibilityState !== "hidden") {
         const elapsed = performance.now() - lastTick;
@@ -34,9 +49,18 @@ export function useClockNow(tickMs: number, pauseWhenHidden: boolean) {
     };
 
     const onVisibilityChange = () => {
+      if (!active) return;
+      if (pauseWhenHidden && document.visibilityState === "hidden") {
+        clearScheduled();
+        return;
+      }
       if (document.visibilityState === "visible") {
         setNow(Date.now());
         lastTick = performance.now();
+        if (pauseWhenHidden) {
+          clearScheduled();
+          schedule();
+        }
       }
     };
 
@@ -45,8 +69,7 @@ export function useClockNow(tickMs: number, pauseWhenHidden: boolean) {
     return () => {
       active = false;
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      clearScheduled();
     };
   }, [tickMs, pauseWhenHidden]);
   return now;
