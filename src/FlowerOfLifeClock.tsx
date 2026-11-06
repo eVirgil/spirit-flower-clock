@@ -1405,6 +1405,283 @@ const ClockPiece = memo(function ClockPiece({
 });
 
 /**
+ * Star positions and Motion animations do not depend on the 33 ms drawing clock.
+ * Keep this subtree stable until its actual theme, budget, or palette changes.
+ */
+const AmbientStarfield = memo(function AmbientStarfield({
+  stars,
+  backgroundTheme,
+  bgStrength,
+  bgStarsEnabled,
+  bgMotionEnabled,
+  effectiveAnimatedStarLimit,
+  softColor,
+}: {
+  stars: Star[];
+  backgroundTheme: BackgroundTheme;
+  bgStrength: number;
+  bgStarsEnabled: boolean;
+  bgMotionEnabled: boolean;
+  effectiveAnimatedStarLimit: number;
+  softColor: string;
+}) {
+  return (
+          <g opacity={0.92}>
+            {stars.map((star, index) => {
+              const twinkleSpeed = backgroundTheme.stars.twinkleSpeed;
+              const duration = bgStarsEnabled ? star.duration / twinkleSpeed : star.duration;
+              const highOpacity = bgStarsEnabled
+                ? Math.min(
+                    0.95,
+                    star.opacity * blendNumber(1, backgroundTheme.stars.opacityHigh, bgStrength)
+                  )
+                : star.opacity;
+              const lowOpacity = bgStarsEnabled
+                ? star.opacity * blendNumber(0.35, backgroundTheme.stars.opacityLow, bgStrength)
+                : star.opacity * 0.35;
+              const peakScale = bgStarsEnabled
+                ? blendNumber(1.15, 1.15 + backgroundTheme.stars.twinkleSharpness * 0.65, bgStrength)
+                : 1.25;
+              const sharpness = bgStarsEnabled ? backgroundTheme.stars.twinkleSharpness : 0.45;
+              const peakTime = Math.max(0.12, 0.48 - sharpness * 0.3);
+              const driftAngle = bgMotionEnabled
+                ? (backgroundTheme.motion.directionDeg * Math.PI) / 180
+                : -Math.PI / 2;
+              const driftDist = bgMotionEnabled
+                ? star.drift *
+                  backgroundTheme.motion.driftDistance *
+                  backgroundTheme.motion.driftSpeed
+                : star.drift * 0.25;
+              const turb = bgMotionEnabled
+                ? (seededRandom(index + 17) - 0.5) * backgroundTheme.motion.turbulence * star.drift
+                : 0;
+              const driftX = Math.cos(driftAngle) * driftDist + turb;
+              const driftY = Math.sin(driftAngle) * driftDist + turb * 0.55;
+              const delay = bgStarsEnabled
+                ? star.delay * blendNumber(1, backgroundTheme.motion.stagger, bgStrength) +
+                  (index % 7) * 0.045 * bgStrength
+                : star.delay;
+
+              const starFill = bgStarsEnabled
+                ? mixHex(softColor, backgroundTheme.tint, bgStrength * 0.32)
+                : softColor;
+
+              if (index >= effectiveAnimatedStarLimit) {
+                return (
+                  <circle
+                    key={star.id}
+                    cx={star.x}
+                    cy={star.y}
+                    r={star.r}
+                    fill={starFill}
+                    opacity={(lowOpacity + highOpacity) * 0.32}
+                  />
+                );
+              }
+
+              return (
+                <motion.circle
+                  key={star.id}
+                  cx={star.x}
+                  cy={star.y}
+                  r={star.r}
+                  fill={starFill}
+                  opacity={star.opacity}
+                  animate={{
+                    opacity: [lowOpacity, highOpacity, lowOpacity],
+                    scale: [0.78, peakScale, 0.82],
+                    x: [0, driftX, 0],
+                    y: [0, driftY, 0],
+                  }}
+                  transition={{
+                    duration,
+                    delay,
+                    repeat: Infinity,
+                    ease: sharpness > 0.62 ? "linear" : "easeInOut",
+                    times: [0, peakTime, 1],
+                  }}
+                  style={{ transformOrigin: `${star.x}px ${star.y}px` }}
+                />
+              );
+            })}
+          </g>
+  );
+});
+
+/** The tick ring only needs a render when the illuminated second changes. */
+const MinuteTickRing = memo(function MinuteTickRing({
+  tickRadius,
+  elapsedTickCount,
+  brightColor,
+  softColor,
+}: {
+  tickRadius: number;
+  elapsedTickCount: number;
+  brightColor: string;
+  softColor: string;
+}) {
+  return (
+          <g>
+            {Array.from({ length: 60 }, (_, i) => {
+              const angle = (i / 60) * Math.PI * 2 - Math.PI / 2;
+              const isMajor = i % 5 === 0;
+              const lit = i <= elapsedTickCount;
+              const inner = tickRadius - (isMajor ? 12 : 7);
+              const outer = tickRadius;
+
+              return (
+                <line
+                  key={`minute-tick-${i}`}
+                  x1={Math.cos(angle) * inner}
+                  y1={Math.sin(angle) * inner}
+                  x2={Math.cos(angle) * outer}
+                  y2={Math.sin(angle) * outer}
+                  stroke={lit ? brightColor : softColor}
+                  strokeWidth={isMajor ? 2.4 : 1.2}
+                  strokeLinecap="round"
+                  opacity={lit ? 0.82 : 0.22}
+                />
+              );
+            })}
+          </g>
+  );
+});
+
+/**
+ * Animated intersection effects are independent Framer Motion loops. Memoization
+ * avoids resending identical animations on every clock-progress update.
+ */
+const IntersectionNodeLayer = memo(function IntersectionNodeLayer({
+  nodes,
+  animatedLimit,
+  glowColor,
+  softColor,
+  brightColor,
+}: {
+  nodes: IntersectionNode[];
+  animatedLimit: number;
+  glowColor: string;
+  softColor: string;
+  brightColor: string;
+}) {
+  return (
+            <g clipPath="url(#flowerClockClip)">
+              {nodes.map((node, index) => {
+                const delay = (index % 13) * 0.055;
+
+                if (index >= animatedLimit) {
+                  return (
+                    <g key={node.id} opacity={0.72}>
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={2.15}
+                        fill="none"
+                        stroke={glowColor}
+                        strokeWidth={0.7}
+                        opacity={0.58}
+                      />
+                      <circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={1.05}
+                        fill={brightColor}
+                        opacity={0.82}
+                      />
+                    </g>
+                  );
+                }
+
+                return (
+                  <motion.g
+                    key={node.id}
+                    initial={{ opacity: 0, scale: 0.42 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.42, ease: "easeOut" }}
+                    style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                  >
+                    <motion.circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={5.4}
+                      fill={glowColor}
+                      opacity={0.08}
+                      animate={{ opacity: [0.05, 0.18, 0.06], scale: [0.82, 1.24, 0.9] }}
+                      transition={{ duration: 2.6, delay, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                    />
+                    <motion.circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={4.2}
+                      fill="none"
+                      stroke={softColor}
+                      strokeWidth={0.55}
+                      opacity={0}
+                      animate={{ opacity: [0, 0.32, 0], scale: [0.55, 1.45, 1.9] }}
+                      transition={{ duration: 1.4, delay: delay * 0.5, ease: "easeOut" }}
+                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                    />
+                    <motion.circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={2.75}
+                      fill="none"
+                      stroke={glowColor}
+                      strokeWidth={0.8}
+                      opacity={0.78}
+                      animate={{ opacity: [0.52, 0.9, 0.58] }}
+                      transition={{ duration: 2.1, delay, repeat: Infinity, ease: "easeInOut" }}
+                    />
+                    <motion.g
+                      animate={{ rotate: [0, 180, 360], opacity: [0.25, 0.62, 0.25] }}
+                      transition={{ duration: 4.8, delay, repeat: Infinity, ease: "linear" }}
+                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                    >
+                      <line
+                        x1={node.x - 3.7}
+                        y1={node.y}
+                        x2={node.x + 3.7}
+                        y2={node.y}
+                        stroke={softColor}
+                        strokeWidth={0.42}
+                        strokeLinecap="round"
+                      />
+                      <line
+                        x1={node.x}
+                        y1={node.y - 3.7}
+                        x2={node.x}
+                        y2={node.y + 3.7}
+                        stroke={softColor}
+                        strokeWidth={0.42}
+                        strokeLinecap="round"
+                      />
+                    </motion.g>
+                    <motion.circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={1.28}
+                      fill={brightColor}
+                      opacity={0.94}
+                      animate={{ scale: [0.86, 1.16, 0.92], opacity: [0.78, 1, 0.84] }}
+                      transition={{ duration: 1.8, delay, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                    />
+                    <circle
+                      cx={node.x - 0.34}
+                      cy={node.y - 0.34}
+                      r={0.42}
+                      fill="#ffffff"
+                      opacity={0.92}
+                    />
+                  </motion.g>
+                );
+              })}
+            </g>
+  );
+});
+
+/**
  * Renders an optimized Flower of Life clock.
  *
  * The component is designed as an ambient timepiece rather than a conventional UI
@@ -1669,12 +1946,13 @@ export default function FlowerOfLifeClock({
     }
   }, [cycleIndex, onCycleComplete, palette.name]);
 
+  const activeStepNearlyComplete = activeStepProgress > 0.96;
   const visiblePieceIds = useMemo(() => {
     const ids = new Set<string>();
 
     steps.forEach((step, stepIndex) => {
       const completed = stepIndex < activeStepIndex || isGlowStep;
-      const nearlyCompleteActive = stepIndex === activeStepIndex && activeStepProgress > 0.96;
+      const nearlyCompleteActive = stepIndex === activeStepIndex && activeStepNearlyComplete;
 
       if (completed || nearlyCompleteActive) {
         for (const piece of step.pieces) ids.add(piece.id);
@@ -1682,7 +1960,7 @@ export default function FlowerOfLifeClock({
     });
 
     return ids;
-  }, [steps, activeStepIndex, isGlowStep, activeStepProgress]);
+  }, [steps, activeStepIndex, isGlowStep, activeStepNearlyComplete]);
 
   const intersectionNodes = useMemo(
     () => makeIntersectionNodes(allPieces, clipRadius),
@@ -2027,85 +2305,15 @@ export default function FlowerOfLifeClock({
         ) : null}
 
         {showStarfield && bgStrength > 0 && hasBackgroundStars(backgroundMode) ? (
-          <g opacity={0.92}>
-            {stars.map((star, index) => {
-              const twinkleSpeed = backgroundTheme.stars.twinkleSpeed;
-              const duration = bgStarsEnabled ? star.duration / twinkleSpeed : star.duration;
-              const highOpacity = bgStarsEnabled
-                ? Math.min(
-                    0.95,
-                    star.opacity * blendNumber(1, backgroundTheme.stars.opacityHigh, bgStrength)
-                  )
-                : star.opacity;
-              const lowOpacity = bgStarsEnabled
-                ? star.opacity * blendNumber(0.35, backgroundTheme.stars.opacityLow, bgStrength)
-                : star.opacity * 0.35;
-              const peakScale = bgStarsEnabled
-                ? blendNumber(1.15, 1.15 + backgroundTheme.stars.twinkleSharpness * 0.65, bgStrength)
-                : 1.25;
-              const sharpness = bgStarsEnabled ? backgroundTheme.stars.twinkleSharpness : 0.45;
-              const peakTime = Math.max(0.12, 0.48 - sharpness * 0.3);
-              const driftAngle = bgMotionEnabled
-                ? (backgroundTheme.motion.directionDeg * Math.PI) / 180
-                : -Math.PI / 2;
-              const driftDist = bgMotionEnabled
-                ? star.drift *
-                  backgroundTheme.motion.driftDistance *
-                  backgroundTheme.motion.driftSpeed
-                : star.drift * 0.25;
-              const turb = bgMotionEnabled
-                ? (seededRandom(index + 17) - 0.5) * backgroundTheme.motion.turbulence * star.drift
-                : 0;
-              const driftX = Math.cos(driftAngle) * driftDist + turb;
-              const driftY = Math.sin(driftAngle) * driftDist + turb * 0.55;
-              const delay = bgStarsEnabled
-                ? star.delay * blendNumber(1, backgroundTheme.motion.stagger, bgStrength) +
-                  (index % 7) * 0.045 * bgStrength
-                : star.delay;
-
-              const starFill = bgStarsEnabled
-                ? mixHex(palette.soft, backgroundTheme.tint, bgStrength * 0.32)
-                : palette.soft;
-
-              if (index >= effectiveAnimatedStarLimit) {
-                return (
-                  <circle
-                    key={star.id}
-                    cx={star.x}
-                    cy={star.y}
-                    r={star.r}
-                    fill={starFill}
-                    opacity={(lowOpacity + highOpacity) * 0.32}
-                  />
-                );
-              }
-
-              return (
-                <motion.circle
-                  key={star.id}
-                  cx={star.x}
-                  cy={star.y}
-                  r={star.r}
-                  fill={starFill}
-                  opacity={star.opacity}
-                  animate={{
-                    opacity: [lowOpacity, highOpacity, lowOpacity],
-                    scale: [0.78, peakScale, 0.82],
-                    x: [0, driftX, 0],
-                    y: [0, driftY, 0],
-                  }}
-                  transition={{
-                    duration,
-                    delay,
-                    repeat: Infinity,
-                    ease: sharpness > 0.62 ? "linear" : "easeInOut",
-                    times: [0, peakTime, 1],
-                  }}
-                  style={{ transformOrigin: `${star.x}px ${star.y}px` }}
-                />
-              );
-            })}
-          </g>
+          <AmbientStarfield
+            stars={stars}
+            backgroundTheme={backgroundTheme}
+            bgStrength={bgStrength}
+            bgStarsEnabled={bgStarsEnabled}
+            bgMotionEnabled={bgMotionEnabled}
+            effectiveAnimatedStarLimit={effectiveAnimatedStarLimit}
+            softColor={palette.soft}
+          />
         ) : null}
 
         {/* Background aura grows subtly during the final glow step and breathes by weekday theme. */}
@@ -2150,148 +2358,25 @@ export default function FlowerOfLifeClock({
         />
 
         {showMinuteTicks ? (
-          <g>
-            {Array.from({ length: 60 }, (_, i) => {
-              const angle = (i / 60) * Math.PI * 2 - Math.PI / 2;
-              const isMajor = i % 5 === 0;
-              const lit = i <= elapsedTickCount;
-              const inner = tickRadius - (isMajor ? 12 : 7);
-              const outer = tickRadius;
-
-              return (
-                <line
-                  key={`minute-tick-${i}`}
-                  x1={Math.cos(angle) * inner}
-                  y1={Math.sin(angle) * inner}
-                  x2={Math.cos(angle) * outer}
-                  y2={Math.sin(angle) * outer}
-                  stroke={lit ? palette.bright : palette.soft}
-                  strokeWidth={isMajor ? 2.4 : 1.2}
-                  strokeLinecap="round"
-                  opacity={lit ? 0.82 : 0.22}
-                />
-              );
-            })}
-          </g>
+          <MinuteTickRing
+            tickRadius={tickRadius}
+            elapsedTickCount={elapsedTickCount}
+            brightColor={palette.bright}
+            softColor={palette.soft}
+          />
         ) : null}
 
         <g transform={`rotate(${rotateDeg})`}>
           {geometryGroups}
 
           {showIntersectionNodes && visibleIntersectionNodes.length > 0 ? (
-            <g clipPath="url(#flowerClockClip)">
-              {visibleIntersectionNodes.map((node, index) => {
-                const delay = (index % 13) * 0.055;
-
-                if (index >= effectiveAnimatedIntersectionNodeLimit) {
-                  return (
-                    <g key={node.id} opacity={0.72}>
-                      <circle
-                        cx={node.x}
-                        cy={node.y}
-                        r={2.15}
-                        fill="none"
-                        stroke={palette.glow}
-                        strokeWidth={0.7}
-                        opacity={0.58}
-                      />
-                      <circle
-                        cx={node.x}
-                        cy={node.y}
-                        r={1.05}
-                        fill={palette.bright}
-                        opacity={0.82}
-                      />
-                    </g>
-                  );
-                }
-
-                return (
-                  <motion.g
-                    key={node.id}
-                    initial={{ opacity: 0, scale: 0.42 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.42, ease: "easeOut" }}
-                    style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                  >
-                    <motion.circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={5.4}
-                      fill={palette.glow}
-                      opacity={0.08}
-                      animate={{ opacity: [0.05, 0.18, 0.06], scale: [0.82, 1.24, 0.9] }}
-                      transition={{ duration: 2.6, delay, repeat: Infinity, ease: "easeInOut" }}
-                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                    />
-                    <motion.circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={4.2}
-                      fill="none"
-                      stroke={palette.soft}
-                      strokeWidth={0.55}
-                      opacity={0}
-                      animate={{ opacity: [0, 0.32, 0], scale: [0.55, 1.45, 1.9] }}
-                      transition={{ duration: 1.4, delay: delay * 0.5, ease: "easeOut" }}
-                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                    />
-                    <motion.circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={2.75}
-                      fill="none"
-                      stroke={palette.glow}
-                      strokeWidth={0.8}
-                      opacity={0.78}
-                      animate={{ opacity: [0.52, 0.9, 0.58] }}
-                      transition={{ duration: 2.1, delay, repeat: Infinity, ease: "easeInOut" }}
-                    />
-                    <motion.g
-                      animate={{ rotate: [0, 180, 360], opacity: [0.25, 0.62, 0.25] }}
-                      transition={{ duration: 4.8, delay, repeat: Infinity, ease: "linear" }}
-                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                    >
-                      <line
-                        x1={node.x - 3.7}
-                        y1={node.y}
-                        x2={node.x + 3.7}
-                        y2={node.y}
-                        stroke={palette.soft}
-                        strokeWidth={0.42}
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1={node.x}
-                        y1={node.y - 3.7}
-                        x2={node.x}
-                        y2={node.y + 3.7}
-                        stroke={palette.soft}
-                        strokeWidth={0.42}
-                        strokeLinecap="round"
-                      />
-                    </motion.g>
-                    <motion.circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={1.28}
-                      fill={palette.bright}
-                      opacity={0.94}
-                      animate={{ scale: [0.86, 1.16, 0.92], opacity: [0.78, 1, 0.84] }}
-                      transition={{ duration: 1.8, delay, repeat: Infinity, ease: "easeInOut" }}
-                      style={{ transformOrigin: `${node.x}px ${node.y}px` }}
-                    />
-                    <circle
-                      cx={node.x - 0.34}
-                      cy={node.y - 0.34}
-                      r={0.42}
-                      fill="#ffffff"
-                      opacity={0.92}
-                    />
-                  </motion.g>
-                );
-              })}
-            </g>
+            <IntersectionNodeLayer
+              nodes={visibleIntersectionNodes}
+              animatedLimit={effectiveAnimatedIntersectionNodeLimit}
+              glowColor={palette.glow}
+              softColor={palette.soft}
+              brightColor={palette.bright}
+            />
           ) : null}
 
           {showDrawHead && !isGlowStep && drawHeads.length > 0 ? (
