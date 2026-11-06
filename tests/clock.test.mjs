@@ -14,6 +14,7 @@ async function importSource(path) {
 
 const { getCycleTiming, getWeekdayCycleTiming } = await importSource("src/clockTiming.ts");
 const { getGeometryRenderPlan } = await importSource("src/geometryRenderPlan.ts");
+const { completionGlowOpacity, FINAL_GLOW_BOOST, INTENSE_GLOW_FILTER_ALPHA } = await importSource("src/completionGlow.ts");
 const { pickValidatedClockOverrides } = await importSource("src/configValidation.ts");
 const { resolveWeekdayIndex } = await importSource("src/weekdayMode.ts");
 
@@ -115,4 +116,27 @@ test("showcase forced phases retain completed geometry and active progress", () 
   const progressByStep = [...Array(completedCount).fill(1), activeProgress];
   assert.equal(progressByStep[activeIndex], activeProgress);
   assert.ok(progressByStep.slice(0, activeIndex).every((p) => p === 1));
+});
+
+test("final glow uses a 35% gain on both completion opacity and existing blur bloom", () => {
+  assert.equal(FINAL_GLOW_BOOST, 1.35);
+  assert.equal(INTENSE_GLOW_FILTER_ALPHA, 1.5 * FINAL_GLOW_BOOST);
+  // Non-saturated point: compare directly against the original formula.
+  const originalAtQuarter = 0.2 + 0.25 * 0.7;
+  assert.ok(Math.abs(completionGlowOpacity(0.25, 1, 1) - originalAtQuarter * FINAL_GLOW_BOOST) < 1e-12);
+});
+
+test("completion glow peaks safely without invalid SVG opacities", () => {
+  assert.equal(completionGlowOpacity(1, 1, 1), 1);
+  assert.equal(completionGlowOpacity(1, 0.55, 1), (0.2 + 0.7) * 0.55 * 1.35);
+  assert.equal(completionGlowOpacity(0.25, 0, 1), 0);
+  assert.equal(completionGlowOpacity(-5, 1, 1), 0.2 * 1.35);
+  assert.equal(completionGlowOpacity(5, 1, 1), 1);
+});
+
+test("high glow preset actually increases completion intensity above normal", () => {
+  const normal = completionGlowOpacity(0.25, 1, 1);
+  const high = completionGlowOpacity(0.25, 1, 1.25);
+  assert.ok(high > normal);
+  assert.ok(high <= 1);
 });
