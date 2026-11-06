@@ -48,6 +48,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { getCycleTiming, getWeekdayCycleTiming } from "./clockTiming";
+import { getGeometryRenderPlan } from "./geometryRenderPlan";
 import { useClockNow } from "./useClockNow";
 import {
   getAuraShapeTransform,
@@ -1405,6 +1406,50 @@ const ClockPiece = memo(function ClockPiece({
 });
 
 /**
+ * Shared step markup for completed and active Flower geometry.
+ * Finished steps receive constant progress=1 and can skip React updates while
+ * the current step is animated. All SVG markup and drawing order are unchanged.
+ */
+const GeometryStepGroup = memo(function GeometryStepGroup({
+  step,
+  progress,
+  color,
+}: {
+  step: RevealStep;
+  progress: number;
+  color: string;
+}) {
+  const clippedPieces = step.pieces.filter((piece) => piece.clipped);
+  const unclippedPieces = step.pieces.filter((piece) => !piece.clipped);
+
+  return (
+    <g>
+      {clippedPieces.length > 0 ? (
+        <g clipPath="url(#flowerClockClip)">
+          {clippedPieces.map((piece) => (
+            <ClockPiece
+              key={piece.id}
+              piece={piece}
+              progress={progress}
+              color={color}
+            />
+          ))}
+        </g>
+      ) : null}
+
+      {unclippedPieces.map((piece) => (
+        <ClockPiece
+          key={piece.id}
+          piece={piece}
+          progress={progress}
+          color={color}
+        />
+      ))}
+    </g>
+  );
+});
+
+/**
  * Star positions and Motion animations do not depend on the 33 ms drawing clock.
  * Keep this subtree stable until its actual theme, budget, or palette changes.
  */
@@ -2002,46 +2047,27 @@ export default function FlowerOfLifeClock({
     [themedStarCount, half, bgStrength, backgroundTheme.stars]
   );
 
-  // Memoize geometry groups to prevent unnecessary re-renders.
-  const geometryGroups = useMemo(
-    () =>
-      steps.map((step, stepIndex) => {
-        if (stepIndex > activeStepIndex) return null;
-
-        const progress =
-          stepIndex < activeStepIndex || isGlowStep ? 1 : activeStepProgress;
-
-        const clippedPieces = step.pieces.filter((p) => p.clipped);
-        const unclippedPieces = step.pieces.filter((p) => !p.clipped);
-
-        return (
-          <g key={step.id}>
-            {clippedPieces.length > 0 ? (
-              <g clipPath="url(#flowerClockClip)">
-                {clippedPieces.map((piece) => (
-                  <ClockPiece
-                    key={piece.id}
-                    piece={piece}
-                    progress={progress}
-                    color={palette.line}
-                  />
-                ))}
-              </g>
-            ) : null}
-
-            {unclippedPieces.map((piece) => (
-              <ClockPiece
-                key={piece.id}
-                piece={piece}
-                progress={progress}
-                color={palette.line}
-              />
-            ))}
-          </g>
-        );
-      }),
-    [steps, activeStepIndex, isGlowStep, activeStepProgress, palette.line]
+  // Finished circles have no per-frame dependencies: only the active step
+  // receives progress updates. Rebuild completed children when a step finishes,
+  // geometry settings change, or the line color actually changes.
+  const { completedCount, activeIndex } = getGeometryRenderPlan(
+    steps.length,
+    activeStepIndex,
+    isGlowStep
   );
+  const completedGeometryGroups = useMemo(
+    () =>
+      steps.slice(0, completedCount).map((step) => (
+        <GeometryStepGroup
+          key={step.id}
+          step={step}
+          progress={1}
+          color={palette.line}
+        />
+      )),
+    [steps, completedCount, palette.line]
+  );
+  const activeGeometryStep = activeIndex === null ? null : steps[activeIndex];
 
   const glowProgress = useMemo(
     () => (isGlowStep ? activeStepProgress : 0),
@@ -2367,7 +2393,15 @@ export default function FlowerOfLifeClock({
         ) : null}
 
         <g transform={`rotate(${rotateDeg})`}>
-          {geometryGroups}
+          {completedGeometryGroups}
+          {activeGeometryStep ? (
+            <GeometryStepGroup
+              key={activeGeometryStep.id}
+              step={activeGeometryStep}
+              progress={activeStepProgress}
+              color={palette.line}
+            />
+          ) : null}
 
           {showIntersectionNodes && visibleIntersectionNodes.length > 0 ? (
             <IntersectionNodeLayer

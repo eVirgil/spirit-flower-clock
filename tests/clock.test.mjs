@@ -13,6 +13,7 @@ async function importSource(path) {
 }
 
 const { getCycleTiming, getWeekdayCycleTiming } = await importSource("src/clockTiming.ts");
+const { getGeometryRenderPlan } = await importSource("src/geometryRenderPlan.ts");
 const { pickValidatedClockOverrides } = await importSource("src/configValidation.ts");
 const { resolveWeekdayIndex } = await importSource("src/weekdayMode.ts");
 
@@ -62,4 +63,56 @@ test("fixed weekday selection does not transition", () => {
   assert.deepEqual(getWeekdayCycleTiming(0, new Date(0), "fixed", 0, 0, 60_000, 7), {
     elapsedMs: 0, durationMs: 1
   });
+});
+
+test("geometry render plan isolates only the actively drawing step", () => {
+  assert.deepEqual(getGeometryRenderPlan(8, 0, false), {
+    completedCount: 0, activeIndex: 0
+  });
+  assert.deepEqual(getGeometryRenderPlan(8, 4, false), {
+    completedCount: 4, activeIndex: 4
+  });
+  assert.deepEqual(getGeometryRenderPlan(8, 7, false), {
+    completedCount: 7, activeIndex: 7
+  });
+});
+
+test("glow phase and forced glow complete the entire Flower without an active step", () => {
+  assert.deepEqual(getGeometryRenderPlan(8, 8, true), {
+    completedCount: 8, activeIndex: null
+  });
+  assert.deepEqual(getGeometryRenderPlan(8, 0, true), {
+    completedCount: 8, activeIndex: null
+  });
+  assert.deepEqual(getGeometryRenderPlan(0, 0, true), {
+    completedCount: 0, activeIndex: null
+  });
+});
+
+test("render plan preserves which circles are visible at every reveal boundary", () => {
+  const count = 18;
+  for (let active = 0; active <= count; active++) {
+    const glow = active === count;
+    const { completedCount, activeIndex } = getGeometryRenderPlan(count, active, glow);
+    const optimizedIndices = [
+      ...Array.from({ length: completedCount }, (_, i) => i),
+      ...(activeIndex === null ? [] : [activeIndex]),
+    ];
+    const originalIndices = Array.from({ length: count }, (_, i) => i)
+      .filter((i) => i <= active);
+    assert.deepEqual(optimizedIndices, originalIndices, `step ${active}`);
+    assert.equal(new Set(optimizedIndices).size, optimizedIndices.length, `no duplicate groups at ${active}`);
+  }
+});
+
+test("showcase forced phases retain completed geometry and active progress", () => {
+  const { completedCount, activeIndex } = getGeometryRenderPlan(18, 12, false);
+  assert.equal(completedCount, 12);
+  assert.equal(activeIndex, 12);
+  // Only the active SVG step receives dynamic progress; the 12 predecessors
+  // retain their constant pathLength=1 / strokeDashoffset=0 treatment.
+  const activeProgress = 0.42;
+  const progressByStep = [...Array(completedCount).fill(1), activeProgress];
+  assert.equal(progressByStep[activeIndex], activeProgress);
+  assert.ok(progressByStep.slice(0, activeIndex).every((p) => p === 1));
 });
