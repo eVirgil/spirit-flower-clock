@@ -49,6 +49,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { getCycleTiming, getWeekdayCycleTiming } from "./clockTiming";
 import { getGeometryRenderPlan } from "./geometryRenderPlan";
+import { completionGlowOpacity, INTENSE_GLOW_FILTER_ALPHA } from "./completionGlow";
 import { useClockNow } from "./useClockNow";
 import {
   getAuraShapeTransform,
@@ -2076,9 +2077,9 @@ export default function FlowerOfLifeClock({
 
   const glowOpacity = useMemo(
     () =>
-      (isGlowStep ? 0.2 + glowProgress * 0.7 : 0) *
-      clamp01(glowOpacityMul) *
-      clamp01(glowIntensityMul),
+      isGlowStep
+        ? completionGlowOpacity(glowProgress, glowOpacityMul, glowIntensityMul)
+        : 0,
     [isGlowStep, glowProgress, glowOpacityMul, glowIntensityMul]
   );
 
@@ -2175,7 +2176,7 @@ export default function FlowerOfLifeClock({
             <feColorMatrix
               in="blurIntense"
               type="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1.5 0"
+              values={`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${INTENSE_GLOW_FILTER_ALPHA} 0`}
               result="boosted"
             />
             <feMerge>

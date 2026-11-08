@@ -86,3 +86,7 @@ The decorative starfield, minute ticks, and intersection-node animations are mem
 The default visual settings are unchanged. Before merging performance changes, manually check a full minute cycle and try Dev Mode's background, palette, performance, and reduced-motion choices. No browser automation or screenshot-baseline infrastructure is required for this pass.
 
 Completed Flower of Life geometry steps now use stable memoized SVG subtrees, while only the current reveal step receives 33 ms drawing-progress updates. The same clipped/unclipped circle markup and step ordering are used for both, including the final glow phase and forced Showcase phases. No new visual presets or screenshot/browser test framework were added.
+
+## Final glow intensity
+
+The completed Flower now receives a **35% boost** in its final pre-reset glow phase. This strengthens the existing completion-layer opacity and SVG bloom filter without adding new animated layers or increasing the blur radius. SVG opacity remains capped at 1; the bloom filter retains its 35% alpha gain at peak intensity. All other stages, the preset visual effects, and the minute-cycle timing are unchanged. High Glow in Dev Mode now honors its intensity multiplier rather than being silently capped at 1.
